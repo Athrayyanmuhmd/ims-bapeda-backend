@@ -42,6 +42,13 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   fail(res, "Terjadi kesalahan pada server", null, 500);
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+// Vercel imports this file as a serverless function (see vercel.json) and
+// calls the exported app directly — it never runs this file as a script, so
+// app.listen() would just hang a function invocation for no reason.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;
