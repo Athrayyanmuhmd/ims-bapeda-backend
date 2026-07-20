@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(uuid())
+  fullName    String
+  email       String   @unique
+  password    String
+  phoneNumber String?
+  status      String   @default("active")
+  divisiId    String?
+  roleId      String?
+  divisi      Divisi?  @relation(fields: [divisiId], references: [id], onDelete: SetNull)
+  role        Role?    @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pesertaAsBimbingan PesertaMagang[]
+  penilaian          Penilaian[]
+}
+
+model Divisi {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users         User[]
+  pesertaMagang PesertaMagang[]
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users User[]
+}
+
+enum StatusMagang {
+  AKTIF
+  SELESAI
+  BERHENTI
+}
+
+model PesertaMagang {
+  id                   String       @id @default(uuid())
+  name                 String
+  email                String
+  phoneNumber          String?
+  nim                  String?
+  divisiId             String?
+  instansiId           String?
+  pembimbingLapanganId String?
+  tanggalMulai         DateTime?
+  tanggalSelesai       DateTime?
+  status               StatusMagang @default(AKTIF)
+  divisi               Divisi?      @relation(fields: [divisiId], references: [id], onDelete: SetNull)
+  instansi             Instansi?    @relation(fields: [instansiId], references: [id], onDelete: SetNull)
+  pembimbingLapangan   User?        @relation(fields: [pembimbingLapanganId], references: [id], onDelete: SetNull)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  absensi   Absensi[]
+  jurnal    Jurnal[]
+  penilaian Penilaian[]
+  dokumen   Dokumen[]
+}
+
+model Absensi {
+  id              String        @id @default(uuid())
+  pesertaMagangId String
+  kehadiran       String
+  tanggal         DateTime
+  jamMasuk        DateTime?
+  jamKeluar       DateTime?
+  keterangan      String?
+  pesertaMagang   PesertaMagang @relation(fields: [pesertaMagangId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model Instansi {
+  id          String   @id @default(uuid())
+  nama        String
+  jenis       String
+  alamat      String?
+  namaPic     String?
+  noHpPic     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pesertaMagang PesertaMagang[]
+}
+
+model Jurnal {
+  id              String        @id @default(uuid())
+  pesertaMagangId String
+  tanggal         DateTime
+  kegiatan        String
+  pesertaMagang   PesertaMagang @relation(fields: [pesertaMagangId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model Penilaian {
+  id              String        @id @default(uuid())
+  pesertaMagangId String
+  penilaiId       String
+  nilai           Int
+  komentar        String?
+  pesertaMagang   PesertaMagang @relation(fields: [pesertaMagangId], references: [id], onDelete: Cascade)
+  penilai         User          @relation(fields: [penilaiId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+enum JenisDokumen {
+  SURAT_PENGANTAR
+  SURAT_BALASAN
+  SERTIFIKAT
+  LAPORAN
+  LAINNYA
+}
+
+model Dokumen {
+  id              String        @id @default(uuid())
+  pesertaMagangId String
+  jenisDokumen    JenisDokumen
+  namaFile        String
+  urlFile         String
+  pesertaMagang   PesertaMagang @relation(fields: [pesertaMagangId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
