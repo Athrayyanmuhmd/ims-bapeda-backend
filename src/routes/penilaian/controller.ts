@@ -1,7 +1,7 @@
 import { Response } from "express";
 import { ok, paginated, fail } from "../../lib/response";
 import { parsePagination } from "../../lib/pagination";
-import { AuthRequest } from "../../middleware/auth";
+import { AuthRequest, pembimbingScope } from "../../middleware/auth";
 import * as penilaianService from "./service";
 
 export const listPenilaian = async (req: AuthRequest, res: Response) => {
@@ -10,7 +10,8 @@ export const listPenilaian = async (req: AuthRequest, res: Response) => {
 
   const result = await penilaianService.listPenilaian(
     { skip, rows, orderKey, orderRule, searchFilters },
-    pesertaMagangId
+    pesertaMagangId,
+    pembimbingScope(req)
   );
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
 
@@ -18,7 +19,7 @@ export const listPenilaian = async (req: AuthRequest, res: Response) => {
 };
 
 export const getPenilaianDetail = async (req: AuthRequest, res: Response) => {
-  const result = await penilaianService.getPenilaianDetail(req.params.id as string);
+  const result = await penilaianService.getPenilaianDetail(req.params.id as string, pembimbingScope(req));
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
   ok(res, result.data);
 };
@@ -38,7 +39,7 @@ export const createPenilaian = async (req: AuthRequest, res: Response) => {
     penilaiId: req.userId as string,
     nilai,
     komentar,
-  });
+  }, pembimbingScope(req));
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
 
   ok(res, result.data, "Penilaian berhasil dibuat");
@@ -47,14 +48,18 @@ export const createPenilaian = async (req: AuthRequest, res: Response) => {
 export const updatePenilaian = async (req: AuthRequest, res: Response) => {
   const { nilai, komentar } = req.body as { nilai?: number; komentar?: string };
 
-  const result = await penilaianService.updatePenilaian(req.params.id as string, { nilai, komentar });
+  const result = await penilaianService.updatePenilaian(
+    req.params.id as string,
+    { nilai, komentar },
+    pembimbingScope(req)
+  );
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
 
   ok(res, result.data, "Penilaian berhasil diupdate");
 };
 
 export const deletePenilaian = async (req: AuthRequest, res: Response) => {
-  const result = await penilaianService.deletePenilaian(req.params.id as string);
+  const result = await penilaianService.deletePenilaian(req.params.id as string, pembimbingScope(req));
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
   ok(res, null, "Penilaian berhasil dihapus");
 };

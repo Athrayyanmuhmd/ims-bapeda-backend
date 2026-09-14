@@ -3,7 +3,28 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+// Demo credentials, published in the README — fine for local development, an
+// open door in production. Override via env for any real deployment.
+const DEFAULT_ADMIN_PASSWORD = "admin123";
+const DEFAULT_PEMBIMBING_PASSWORD = "bimbing123";
+
+const adminPlain = process.env.SEED_ADMIN_PASSWORD ?? DEFAULT_ADMIN_PASSWORD;
+const pembimbingPlain = process.env.SEED_PEMBIMBING_PASSWORD ?? DEFAULT_PEMBIMBING_PASSWORD;
+
+const usingDefaults =
+  adminPlain === DEFAULT_ADMIN_PASSWORD || pembimbingPlain === DEFAULT_PEMBIMBING_PASSWORD;
+
 async function main() {
+  // Refuse rather than warn: a warning in CI output is exactly the kind of thing
+  // that gets scrolled past, and the result is a live admin account whose
+  // password is in a public README.
+  if (usingDefaults && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Menolak seed dengan password demo di production. " +
+        "Set SEED_ADMIN_PASSWORD dan SEED_PEMBIMBING_PASSWORD terlebih dahulu."
+    );
+  }
+
   // Roles
   const adminRole = await prisma.role.upsert({
     where: { id: "role-admin" },
@@ -80,7 +101,7 @@ async function main() {
   });
 
   // Admin user
-  const adminPassword = await bcrypt.hash("admin123", 10);
+  const adminPassword = await bcrypt.hash(adminPlain, 10);
   const admin = await prisma.user.upsert({
     where: { email: "admin@bapeda.go.id" },
     update: {},
@@ -96,7 +117,7 @@ async function main() {
   });
 
   // Pembimbing lapangan
-  const pembimbingPassword = await bcrypt.hash("bimbing123", 10);
+  const pembimbingPassword = await bcrypt.hash(pembimbingPlain, 10);
   const pembimbing = await prisma.user.upsert({
     where: { email: "bimbing@bapeda.go.id" },
     update: { roleId: pembimbingRole.id },
@@ -212,8 +233,15 @@ async function main() {
   });
 
   console.log("✅ Seed selesai");
-  console.log("📧 Admin     : admin@bapeda.go.id | password: admin123 | role: Admin");
-  console.log("📧 Pembimbing: bimbing@bapeda.go.id | password: bimbing123 | role: Pembimbing");
+  console.log(`📧 Admin     : admin@bapeda.go.id | password: ${adminPlain} | role: Admin`);
+  console.log(`📧 Pembimbing: bimbing@bapeda.go.id | password: ${pembimbingPlain} | role: Pembimbing`);
+
+  if (usingDefaults) {
+    console.warn(
+      "\n⚠️  Password demo masih terpakai. Ganti lewat menu Ganti Password, " +
+        "atau set SEED_ADMIN_PASSWORD / SEED_PEMBIMBING_PASSWORD sebelum seed."
+    );
+  }
 }
 
 main()

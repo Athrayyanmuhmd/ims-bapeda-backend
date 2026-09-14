@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { buildSearchWhere, PaginationParams } from "../../lib/pagination";
+import { buildOrderBy, buildSearchWhere, PaginationParams } from "../../lib/pagination";
 import { success, failure } from "../../lib/serviceResult";
 import * as userRepository from "./repository";
 
@@ -14,11 +14,16 @@ const present = (u: NonNullable<UserWithRelations>) => ({
   roleId: u.role?.id ?? null,
 });
 
+// Never add `password` here — see buildSearchWhere for why that would be a hash
+// disclosure oracle rather than a search feature.
+const SEARCHABLE = ["fullName", "email"] as const;
+const SORTABLE = ["fullName", "email", "status", "createdAt"] as const;
+
 export const listUsers = async ({ skip, rows, orderKey, orderRule, searchFilters }: PaginationParams) => {
-  const where = buildSearchWhere(searchFilters);
+  const where = buildSearchWhere(searchFilters, SEARCHABLE);
 
   const [users, totalData] = await Promise.all([
-    userRepository.findMany(where, skip, rows, { [orderKey]: orderRule }),
+    userRepository.findMany(where, skip, rows, buildOrderBy(orderKey, orderRule, SORTABLE)),
     userRepository.count(where),
   ]);
 
@@ -75,6 +80,35 @@ export const updateUser = async (id: string, input: UpdateUserInput) => {
 
   const user = await userRepository.update(id, data);
   return success({ ...user, name: user.fullName });
+};
+
+export const MIN_PASSWORD_LENGTH = 8;
+
+// Self-service, so it verifies the current password rather than trusting the
+// session alone — a stolen cookie shouldn't be enough to lock the real owner out.
+export const changeOwnPassword = async (
+  userId: string,
+  currentPassword: string,
+  newPassword: string
+) => {
+  if (newPassword.length < MIN_PASSWORD_LENGTH) {
+    return failure(`Password baru minimal ${MIN_PASSWORD_LENGTH} karakter`);
+  }
+
+  if (newPassword === currentPassword) {
+    return failure("Password baru harus berbeda dari password saat ini");
+  }
+
+  // findByEmail-style raw read: userRepository.findById strips the hash.
+  const user = await userRepository.findWithPassword(userId);
+  if (!user) return failure("User tidak ditemukan", 404);
+
+  if (!(await bcrypt.compare(currentPassword, user.password))) {
+    return failure("Password saat ini salah", 401);
+  }
+
+  await userRepository.update(userId, { password: await bcrypt.hash(newPassword, 10) });
+  return success(null);
 };
 
 export const deleteUser = async (id: string) => {

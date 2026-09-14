@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import prisma from "../../lib/prisma";
+import { parseDateOnly } from "../../lib/datetime";
 import { PaginationParams } from "../../lib/pagination";
 import { success, failure } from "../../lib/serviceResult";
 
@@ -26,9 +27,12 @@ const present = (j: JurnalWithRelations) => ({
   updatedAt: j.updatedAt,
 });
 
+// pembimbingId scopes every read/write to that supervisor's binaan; undefined
+// means unrestricted (Admin). See pembimbingScope() in middleware/auth.
 export const listJurnal = async (
   { skip, rows, orderKey, orderRule, searchFilters }: PaginationParams,
-  pesertaMagangId?: string
+  pesertaMagangId?: string,
+  pembimbingId?: string
 ) => {
   const searchWhere = Object.keys(searchFilters).length
     ? {
@@ -38,7 +42,11 @@ export const listJurnal = async (
       }
     : {};
 
-  const where = { ...searchWhere, ...(pesertaMagangId ? { pesertaMagangId } : {}) };
+  const where = {
+    ...searchWhere,
+    ...(pesertaMagangId ? { pesertaMagangId } : {}),
+    ...(pembimbingId ? { pesertaMagang: { pembimbingLapanganId: pembimbingId } } : {}),
+  };
 
   const [data, totalData] = await Promise.all([
     prisma.jurnal.findMany({
@@ -54,8 +62,19 @@ export const listJurnal = async (
   return success({ entries: data.map(present), totalData, totalPage: Math.ceil(totalData / rows) });
 };
 
-export const getJurnalDetail = async (id: string) => {
-  const jurnal = await prisma.jurnal.findUnique({ where: { id }, select: jurnalSelect });
+// findFirst (not findUnique) so the pembimbing scope rides along in the same
+// query — an out-of-scope record reads as "tidak ditemukan".
+const findScoped = (id: string, pembimbingId?: string) =>
+  prisma.jurnal.findFirst({
+    where: {
+      id,
+      ...(pembimbingId ? { pesertaMagang: { pembimbingLapanganId: pembimbingId } } : {}),
+    },
+    select: jurnalSelect,
+  });
+
+export const getJurnalDetail = async (id: string, pembimbingId?: string) => {
+  const jurnal = await findScoped(id, pembimbingId);
   if (!jurnal) return failure("Jurnal tidak ditemukan", 404);
   return success(present(jurnal));
 };
@@ -66,25 +85,38 @@ interface JurnalInput {
   kegiatan: string;
 }
 
-export const createJurnal = async (input: JurnalInput) => {
-  const pesertaExists = await prisma.pesertaMagang.findUnique({ where: { id: input.pesertaMagangId } });
+export const createJurnal = async (input: JurnalInput, pembimbingId?: string) => {
+  const pesertaExists = await prisma.pesertaMagang.findFirst({
+    where: {
+      id: input.pesertaMagangId,
+      ...(pembimbingId ? { pembimbingLapanganId: pembimbingId } : {}),
+    },
+  });
   if (!pesertaExists) return failure("Peserta magang tidak ditemukan", 404);
 
   const jurnal = await prisma.jurnal.create({
-    data: { pesertaMagangId: input.pesertaMagangId, tanggal: new Date(input.tanggal), kegiatan: input.kegiatan },
+    data: {
+      pesertaMagangId: input.pesertaMagangId,
+      tanggal: parseDateOnly(input.tanggal),
+      kegiatan: input.kegiatan,
+    },
     select: jurnalSelect,
   });
   return success(present(jurnal));
 };
 
-export const updateJurnal = async (id: string, input: { tanggal?: string; kegiatan?: string }) => {
-  const exists = await prisma.jurnal.findUnique({ where: { id } });
+export const updateJurnal = async (
+  id: string,
+  input: { tanggal?: string; kegiatan?: string },
+  pembimbingId?: string
+) => {
+  const exists = await findScoped(id, pembimbingId);
   if (!exists) return failure("Jurnal tidak ditemukan", 404);
 
   const jurnal = await prisma.jurnal.update({
     where: { id },
     data: {
-      ...(input.tanggal && { tanggal: new Date(input.tanggal) }),
+      ...(input.tanggal && { tanggal: parseDateOnly(input.tanggal) }),
       ...(input.kegiatan !== undefined && { kegiatan: input.kegiatan }),
     },
     select: jurnalSelect,
@@ -92,8 +124,8 @@ export const updateJurnal = async (id: string, input: { tanggal?: string; kegiat
   return success(present(jurnal));
 };
 
-export const deleteJurnal = async (id: string) => {
-  const exists = await prisma.jurnal.findUnique({ where: { id } });
+export const deleteJurnal = async (id: string, pembimbingId?: string) => {
+  const exists = await findScoped(id, pembimbingId);
   if (!exists) return failure("Jurnal tidak ditemukan", 404);
 
   await prisma.jurnal.delete({ where: { id } });

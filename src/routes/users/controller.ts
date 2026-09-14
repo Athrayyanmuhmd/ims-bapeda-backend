@@ -2,7 +2,7 @@ import { Response } from "express";
 import { ok, paginated, fail } from "../../lib/response";
 import { parsePagination } from "../../lib/pagination";
 import { AuthRequest } from "../../middleware/auth";
-import { isValidEmail } from "../../lib/validate";
+import { isValidEmail, isValidPhoneId } from "../../lib/validate";
 import * as userService from "./service";
 
 // GET all users (also accepts POST with body.params from frontend legacy pattern)
@@ -13,6 +13,29 @@ export const listUsers = async (req: AuthRequest, res: Response) => {
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
 
   paginated(res, result.data.entries, result.data.totalData, result.data.totalPage);
+};
+
+// Always acts on req.userId — the target is never taken from the request, so
+// this can't be pointed at another account.
+export const changeOwnPassword = async (req: AuthRequest, res: Response) => {
+  const { currentPassword, newPassword } = req.body as {
+    currentPassword?: string;
+    newPassword?: string;
+  };
+
+  if (!currentPassword || !newPassword) {
+    fail(res, "Password saat ini dan password baru wajib diisi");
+    return;
+  }
+
+  const result = await userService.changeOwnPassword(
+    req.userId as string,
+    currentPassword,
+    newPassword
+  );
+  if (!result.ok) { fail(res, result.message, null, result.status); return; }
+
+  ok(res, null, "Password berhasil diubah");
 };
 
 // Used by both GET /:id and legacy POST /detail/:id
@@ -33,6 +56,10 @@ export const createUser = async (req: AuthRequest, res: Response) => {
   }
   if (!isValidEmail(email)) { fail(res, "Format email tidak valid"); return; }
   if (password.length < 8) { fail(res, "Password minimal 8 karakter"); return; }
+  if (phoneNumber && !isValidPhoneId(phoneNumber)) {
+    fail(res, "Format nomor HP tidak valid (contoh: 081234567890)");
+    return;
+  }
 
   const result = await userService.createUser({ fullName, email, password, phoneNumber, divisiId, roleId });
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
@@ -48,6 +75,10 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
 
   if (email && !isValidEmail(email)) { fail(res, "Format email tidak valid"); return; }
   if (password && password.length < 8) { fail(res, "Password minimal 8 karakter"); return; }
+  if (phoneNumber && !isValidPhoneId(phoneNumber)) {
+    fail(res, "Format nomor HP tidak valid (contoh: 081234567890)");
+    return;
+  }
 
   const result = await userService.updateUser(req.params.id as string, {
     fullName, email, phoneNumber, divisiId, roleId, status, password,

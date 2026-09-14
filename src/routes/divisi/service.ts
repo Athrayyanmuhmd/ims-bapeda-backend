@@ -1,12 +1,20 @@
 import prisma from "../../lib/prisma";
-import { buildSearchWhere, PaginationParams } from "../../lib/pagination";
+import { buildOrderBy, buildSearchWhere, PaginationParams } from "../../lib/pagination";
 import { success, failure } from "../../lib/serviceResult";
 
+const SEARCHABLE = ["name", "description"] as const;
+const SORTABLE = ["name", "createdAt"] as const;
+
 export const listDivisi = async ({ skip, rows, orderKey, orderRule, searchFilters }: PaginationParams) => {
-  const where = buildSearchWhere(searchFilters);
+  const where = buildSearchWhere(searchFilters, SEARCHABLE);
 
   const [divisi, totalData] = await Promise.all([
-    prisma.divisi.findMany({ where, skip, take: rows, orderBy: { [orderKey]: orderRule } }),
+    prisma.divisi.findMany({
+      where,
+      skip,
+      take: rows,
+      orderBy: buildOrderBy(orderKey, orderRule, SORTABLE),
+    }),
     prisma.divisi.count({ where }),
   ]);
 

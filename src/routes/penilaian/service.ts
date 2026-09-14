@@ -28,9 +28,12 @@ const present = (p: PenilaianWithRelations) => ({
   updatedAt: p.updatedAt,
 });
 
+// pembimbingId scopes every read/write to that supervisor's binaan; undefined
+// means unrestricted (Admin). See pembimbingScope() in middleware/auth.
 export const listPenilaian = async (
   { skip, rows, orderKey, orderRule, searchFilters }: PaginationParams,
-  pesertaMagangId?: string
+  pesertaMagangId?: string,
+  pembimbingId?: string
 ) => {
   const searchWhere = Object.keys(searchFilters).length
     ? {
@@ -40,7 +43,11 @@ export const listPenilaian = async (
       }
     : {};
 
-  const where = { ...searchWhere, ...(pesertaMagangId ? { pesertaMagangId } : {}) };
+  const where = {
+    ...searchWhere,
+    ...(pesertaMagangId ? { pesertaMagangId } : {}),
+    ...(pembimbingId ? { pesertaMagang: { pembimbingLapanganId: pembimbingId } } : {}),
+  };
 
   const [data, totalData] = await Promise.all([
     prisma.penilaian.findMany({
@@ -56,8 +63,19 @@ export const listPenilaian = async (
   return success({ entries: data.map(present), totalData, totalPage: Math.ceil(totalData / rows) });
 };
 
-export const getPenilaianDetail = async (id: string) => {
-  const penilaian = await prisma.penilaian.findUnique({ where: { id }, select: penilaianSelect });
+// findFirst (not findUnique) so the pembimbing scope rides along in the same
+// query — an out-of-scope record reads as "tidak ditemukan".
+const findScoped = (id: string, pembimbingId?: string) =>
+  prisma.penilaian.findFirst({
+    where: {
+      id,
+      ...(pembimbingId ? { pesertaMagang: { pembimbingLapanganId: pembimbingId } } : {}),
+    },
+    select: penilaianSelect,
+  });
+
+export const getPenilaianDetail = async (id: string, pembimbingId?: string) => {
+  const penilaian = await findScoped(id, pembimbingId);
   if (!penilaian) return failure("Penilaian tidak ditemukan", 404);
   return success(present(penilaian));
 };
@@ -69,8 +87,13 @@ interface PenilaianInput {
   komentar?: string;
 }
 
-export const createPenilaian = async (input: PenilaianInput) => {
-  const pesertaExists = await prisma.pesertaMagang.findUnique({ where: { id: input.pesertaMagangId } });
+export const createPenilaian = async (input: PenilaianInput, pembimbingId?: string) => {
+  const pesertaExists = await prisma.pesertaMagang.findFirst({
+    where: {
+      id: input.pesertaMagangId,
+      ...(pembimbingId ? { pembimbingLapanganId: pembimbingId } : {}),
+    },
+  });
   if (!pesertaExists) return failure("Peserta magang tidak ditemukan", 404);
 
   if (input.nilai < 0 || input.nilai > 100) return failure("Nilai harus di antara 0 dan 100");
@@ -87,8 +110,12 @@ export const createPenilaian = async (input: PenilaianInput) => {
   return success(present(penilaian));
 };
 
-export const updatePenilaian = async (id: string, input: { nilai?: number; komentar?: string }) => {
-  const exists = await prisma.penilaian.findUnique({ where: { id } });
+export const updatePenilaian = async (
+  id: string,
+  input: { nilai?: number; komentar?: string },
+  pembimbingId?: string
+) => {
+  const exists = await findScoped(id, pembimbingId);
   if (!exists) return failure("Penilaian tidak ditemukan", 404);
 
   if (input.nilai !== undefined && (input.nilai < 0 || input.nilai > 100)) {
@@ -106,8 +133,8 @@ export const updatePenilaian = async (id: string, input: { nilai?: number; komen
   return success(present(penilaian));
 };
 
-export const deletePenilaian = async (id: string) => {
-  const exists = await prisma.penilaian.findUnique({ where: { id } });
+export const deletePenilaian = async (id: string, pembimbingId?: string) => {
+  const exists = await findScoped(id, pembimbingId);
   if (!exists) return failure("Penilaian tidak ditemukan", 404);
 
   await prisma.penilaian.delete({ where: { id } });

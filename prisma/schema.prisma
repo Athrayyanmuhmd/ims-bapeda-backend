@@ -59,6 +59,10 @@ model PesertaMagang {
   email                String
   phoneNumber          String?
   nim                  String?
+  // Portal peserta. Null = akun belum diaktifkan, peserta tidak bisa login.
+  // Deliberately not a User row: peserta aren't staff, and reusing User would
+  // hand them a role plus every staff endpoint that role unlocks.
+  password             String?
   divisiId             String?
   instansiId           String?
   pembimbingLapanganId String?
@@ -88,6 +92,15 @@ model Absensi {
   pesertaMagang   PesertaMagang @relation(fields: [pesertaMagangId], references: [id], onDelete: Cascade)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+
+  // One absensi row per peserta per hari. Duplicates made "% kehadiran" in the
+  // rekap CSV and the printed laporan double-count the same day, and the daily
+  // roster had no way to say which row was authoritative.
+  //
+  // Relies on `tanggal` always being UTC midnight, which lib/datetime.ts
+  // guarantees (parseDateOnly). Migrating `tanggal` to `@db.Date` would enforce
+  // that at the column level — worth doing if it ever drifts.
+  @@unique([pesertaMagangId, tanggal])
 }
 
 model Instansi {

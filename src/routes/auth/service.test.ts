@@ -100,7 +100,11 @@ describe("auth service — verifyToken", () => {
 
     const result = await authService.verifyToken(token);
 
-    expect(result).toEqual({ ok: false, message: "User tidak ditemukan", status: 404 });
+    expect(result).toEqual({
+      ok: false,
+      message: "Token tidak valid atau sudah expired",
+      status: 401,
+    });
   });
 
   it("succeeds for a valid token with an existing user", async () => {

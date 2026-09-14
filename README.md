@@ -44,7 +44,28 @@ Server berjalan di `http://localhost:3001`
 | Email | Password | Role |
 |---|---|---|
 | admin@bapeda.go.id | admin123 | Admin |
-| bimbing@bapeda.go.id | bimbing123 | Admin |
+| bimbing@bapeda.go.id | bimbing123 | Pembimbing |
+
+## Hak Akses
+
+Role diambil dari database pada **setiap request**, bukan dari klaim di dalam JWT.
+Konsekuensinya: menonaktifkan akun (`status != "active"`) atau mengganti role langsung
+berlaku, tidak menunggu token 7 hari kedaluwarsa.
+
+| Role | Akses |
+|---|---|
+| **Admin** | Semua data, plus manajemen user/role/divisi/instansi |
+| **Pembimbing** | Hanya peserta magang yang ia bimbing (`pembimbingLapanganId`), beserta absensi, jurnal, penilaian, dan dokumen peserta tersebut |
+| **Lainnya** | Tidak melihat data peserta (deny-by-default) |
+
+Scoping berlaku di layer service untuk `peserta-magang`, `absensi`, `jurnal`,
+`penilaian`, dan `dokumen` — baik saat list maupun saat detail/update/delete.
+Record di luar scope dijawab **404 "tidak ditemukan"** (bukan 403) supaya
+keberadaannya tidak bocor.
+
+Aturan tambahan untuk non-Admin:
+- Peserta yang ia buat otomatis memakai dirinya sebagai pembimbing lapangan.
+- Tidak bisa memindahkan peserta ke pembimbing lain.
 
 ## API Endpoints
 
@@ -93,11 +114,22 @@ Server berjalan di `http://localhost:3001`
 ### Absensi
 | Method | URL | Auth | Keterangan |
 |---|---|---|---|
-| GET/POST | /absensi | ✅ | List absensi |
+| GET/POST | /absensi | ✅ | List absensi (lihat filter di bawah) |
 | GET | /absensi/:id | ✅ | Detail absensi |
 | POST | /absensi/create | ✅ | Tambah absensi |
 | PUT | /absensi/:id | ✅ | Update absensi |
 | DELETE | /absensi/:id | ✅ | Hapus absensi |
+
+Filter `/absensi` (dikirim lewat `filters` sebagai JSON):
+
+| Filter | Contoh | Keterangan |
+|---|---|---|
+| `tanggal` | `2026-07-16` | Satu hari persis. Menang atas rentang di bawah |
+| `dariTanggal` | `2026-07-01` | Awal rentang, opsional |
+| `sampaiTanggal` | `2026-07-31` | Akhir rentang, opsional |
+| `pesertaMagangId` | `peserta-1` | Batasi ke satu peserta |
+
+Rentang dipakai oleh fitur **Export CSV rekap absensi** di backoffice.
 
 ## Format Response
 ```json

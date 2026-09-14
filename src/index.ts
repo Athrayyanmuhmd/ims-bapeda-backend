@@ -18,6 +18,7 @@ import instansiRoutes from "./routes/instansi";
 import jurnalRoutes from "./routes/jurnal";
 import penilaianRoutes from "./routes/penilaian";
 import dokumenRoutes from "./routes/dokumen";
+import pesertaPortalRoutes from "./routes/peserta-portal";
 
 const app = express();
 const PORT = process.env.PORT ?? 3001;
@@ -25,6 +26,16 @@ const PORT = process.env.PORT ?? 3001;
 app.use(helmet());
 app.use(cors({ origin: process.env.FRONTEND_URL ?? "http://localhost:3000" }));
 app.use(express.json());
+
+app.get("/health", async (_req, res) => {
+  try {
+    const { default: prisma } = await import("./lib/prisma");
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true, db: true });
+  } catch {
+    res.status(503).json({ ok: false, db: false });
+  }
+});
 
 app.use(authRoutes);
 app.use("/users", userRoutes);
@@ -36,6 +47,9 @@ app.use("/instansi", instansiRoutes);
 app.use("/jurnal", jurnalRoutes);
 app.use("/penilaian", penilaianRoutes);
 app.use("/dokumen", dokumenRoutes);
+// Portal peserta magang — its own auth middleware and token audience, kept
+// separate from every staff route above.
+app.use("/portal", pesertaPortalRoutes);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err);

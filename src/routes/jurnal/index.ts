@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { authenticate } from "../../middleware/auth";
+import { authenticate, requireRole, STAFF_OPS_ROLES } from "../../middleware/auth";
 import { listJurnal, getJurnalDetail, createJurnal, updateJurnal, deleteJurnal } from "./controller";
 
 const router = Router();
 router.use(authenticate);
+router.use(requireRole(...STAFF_OPS_ROLES));
 
 router.get("/", listJurnal);
 router.post("/", listJurnal);

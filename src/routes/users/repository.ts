@@ -21,6 +21,11 @@ export const findById = (id: string) => prisma.user.findUnique({ where: { id }, 
 
 export const findByEmail = (email: string) => prisma.user.findUnique({ where: { email } });
 
+// The only read that returns the hash — for verifying a self-service password
+// change. Everything else goes through userSelect, which omits it.
+export const findWithPassword = (id: string) =>
+  prisma.user.findUnique({ where: { id }, select: { id: true, password: true } });
+
 export const create = (data: {
   fullName: string;
   email: string;

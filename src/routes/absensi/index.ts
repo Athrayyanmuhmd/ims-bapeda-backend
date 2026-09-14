@@ -1,9 +1,10 @@
 import { Router } from "express";
-import { authenticate } from "../../middleware/auth";
+import { authenticate, requireRole, STAFF_OPS_ROLES } from "../../middleware/auth";
 import { listAbsensi, getAbsensiDetail, createAbsensi, updateAbsensi, deleteAbsensi } from "./controller";
 
 const router = Router();
 router.use(authenticate);
+router.use(requireRole(...STAFF_OPS_ROLES));
 
 router.get("/", listAbsensi);
 router.post("/", listAbsensi);

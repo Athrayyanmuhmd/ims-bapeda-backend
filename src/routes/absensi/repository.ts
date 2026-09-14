@@ -24,11 +24,21 @@ export const findMany = (where: object, skip: number, take: number, orderBy: obj
 
 export const count = (where: object) => prisma.absensi.count({ where });
 
-export const findById = (id: string) =>
-  prisma.absensi.findUnique({ where: { id }, select: absensiSelect });
+// findFirst (not findUnique) so the pembimbing scope can be folded into the
+// same query — an out-of-scope record reads as "tidak ditemukan".
+export const findById = (id: string, pembimbingId?: string) =>
+  prisma.absensi.findFirst({
+    where: {
+      id,
+      ...(pembimbingId ? { pesertaMagang: { pembimbingLapanganId: pembimbingId } } : {}),
+    },
+    select: absensiSelect,
+  });
 
-export const pesertaExists = (pesertaMagangId: string) =>
-  prisma.pesertaMagang.findUnique({ where: { id: pesertaMagangId } });
+export const pesertaExists = (pesertaMagangId: string, pembimbingId?: string) =>
+  prisma.pesertaMagang.findFirst({
+    where: { id: pesertaMagangId, ...(pembimbingId ? { pembimbingLapanganId: pembimbingId } : {}) },
+  });
 
 export const create = (data: {
   pesertaMagangId: string;

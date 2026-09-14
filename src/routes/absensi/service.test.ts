@@ -67,7 +67,8 @@ describe("absensi service — updateAbsensi", () => {
 
     const [, data] = vi.mocked(absensiRepository.update).mock.calls[0];
     expect(data.kehadiran).toBe("Hadir");
-    expect(data.jamMasuk).toEqual(new Date("2026-07-16T08:05:00"));
+    // 08:05 WIB, pinned — not "08:05 in whatever zone the server happens to be".
+    expect(data.jamMasuk).toEqual(new Date("2026-07-16T01:05:00.000Z"));
   });
 
   it("leaves jamMasuk/jamKeluar untouched when kehadiran isn't part of the update", async () => {
@@ -112,7 +113,9 @@ describe("absensi service — createAbsensi", () => {
 describe("absensi service — listAbsensi filters", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("builds a full-day date range when a tanggal filter is given", async () => {
+  // Asserted in UTC, not via new Date("...T00:00:00"): that form is parsed in the
+  // host's timezone, so the old expectation here only passed on a WIB machine.
+  it("builds a full-day date range in UTC when a tanggal filter is given", async () => {
     vi.mocked(absensiRepository.findMany).mockResolvedValue([]);
     vi.mocked(absensiRepository.count).mockResolvedValue(0);
 
@@ -121,10 +124,42 @@ describe("absensi service — listAbsensi filters", () => {
     const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
     expect(where).toMatchObject({
       tanggal: {
-        gte: new Date("2026-07-16T00:00:00"),
-        lt: new Date("2026-07-16T23:59:59.999"),
+        gte: new Date("2026-07-16T00:00:00.000Z"),
+        lt: new Date("2026-07-17T00:00:00.000Z"),
       },
     });
+  });
+
+  it("builds an inclusive range from dariTanggal/sampaiTanggal", async () => {
+    vi.mocked(absensiRepository.findMany).mockResolvedValue([]);
+    vi.mocked(absensiRepository.count).mockResolvedValue(0);
+
+    await absensiService.listAbsensi(baseParams, {
+      dariTanggal: "2026-07-01",
+      sampaiTanggal: "2026-07-31",
+    });
+
+    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
+    expect(where).toMatchObject({
+      tanggal: {
+        gte: new Date("2026-07-01T00:00:00.000Z"),
+        lte: new Date("2026-07-31T23:59:59.999Z"),
+      },
+    });
+  });
+
+  it("lets an exact tanggal win over a range", async () => {
+    vi.mocked(absensiRepository.findMany).mockResolvedValue([]);
+    vi.mocked(absensiRepository.count).mockResolvedValue(0);
+
+    await absensiService.listAbsensi(baseParams, {
+      tanggal: "2026-07-16",
+      dariTanggal: "2026-01-01",
+      sampaiTanggal: "2026-12-31",
+    });
+
+    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
+    expect(where).toMatchObject({ tanggal: { lt: new Date("2026-07-17T00:00:00.000Z") } });
   });
 
   it("scopes to a single peserta when pesertaMagangId is given", async () => {
@@ -146,5 +181,56 @@ describe("absensi service — listAbsensi filters", () => {
     const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
     expect(where).not.toHaveProperty("tanggal");
     expect(where).not.toHaveProperty("pesertaMagangId");
+  });
+});
+
+// Absensi has no pembimbing column of its own — the scope has to reach through
+// the pesertaMagang relation, which is the variant most likely to be dropped.
+describe("absensi service — pembimbing scoping", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("filters the list through the pesertaMagang relation when scoped", async () => {
+    vi.mocked(absensiRepository.findMany).mockResolvedValue([]);
+    vi.mocked(absensiRepository.count).mockResolvedValue(0);
+
+    await absensiService.listAbsensi(baseParams, {}, "user-pembimbing");
+
+    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
+    expect(where).toMatchObject({ pesertaMagang: { pembimbingLapanganId: "user-pembimbing" } });
+  });
+
+  it("applies no relation filter for an unscoped (Admin) caller", async () => {
+    vi.mocked(absensiRepository.findMany).mockResolvedValue([]);
+    vi.mocked(absensiRepository.count).mockResolvedValue(0);
+
+    await absensiService.listAbsensi(baseParams);
+
+    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
+    expect(where).not.toHaveProperty("pesertaMagang");
+  });
+
+  it("refuses to create absensi for a peserta outside the scope", async () => {
+    vi.mocked(absensiRepository.pesertaExists).mockResolvedValue(null);
+
+    const result = await absensiService.createAbsensi(
+      { pesertaMagangId: "peserta-lain", kehadiran: "Hadir", tanggal: "2026-07-16" },
+      "user-pembimbing"
+    );
+
+    expect(absensiRepository.pesertaExists).toHaveBeenCalledWith("peserta-lain", "user-pembimbing");
+    expect(result.ok).toBe(false);
+    expect(absensiRepository.create).not.toHaveBeenCalled();
+  });
+
+  it("passes the scope to the lookup behind update and delete", async () => {
+    vi.mocked(absensiRepository.findById).mockResolvedValue(null);
+
+    await absensiService.updateAbsensi("absensi-lain", { kehadiran: "Sakit" }, "user-pembimbing");
+    await absensiService.deleteAbsensi("absensi-lain", "user-pembimbing");
+
+    expect(absensiRepository.findById).toHaveBeenNthCalledWith(1, "absensi-lain", "user-pembimbing");
+    expect(absensiRepository.findById).toHaveBeenNthCalledWith(2, "absensi-lain", "user-pembimbing");
+    expect(absensiRepository.update).not.toHaveBeenCalled();
+    expect(absensiRepository.remove).not.toHaveBeenCalled();
   });
 });
