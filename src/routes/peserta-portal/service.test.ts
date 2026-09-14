@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+﻿import { beforeEach, describe, expect, it, vi } from "vitest";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import prisma from "../../lib/prisma";
@@ -10,7 +10,7 @@ vi.mock("../../lib/prisma", () => ({
   default: {
     pesertaMagang: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     absensi: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
-    jurnal: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
+    logbook: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), findMany: vi.fn() },
     penilaian: { findMany: vi.fn() },
     dokumen: { findMany: vi.fn() },
   },
@@ -174,45 +174,77 @@ describe("portal check-in / check-out", () => {
   });
 });
 
-describe("portal jurnal", () => {
+describe("portal logbook", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("refuses a future-dated jurnal", async () => {
-    const result = await portalService.createOwnJurnal(PESERTA, "2099-01-01", "Kegiatan");
+  it("refuses a future-dated logbook", async () => {
+    const result = await portalService.createOwnLogbook(PESERTA, "2099-01-01", "Kegiatan");
 
     expect(result.ok).toBe(false);
-    expect(prisma.jurnal.create).not.toHaveBeenCalled();
+    expect(prisma.logbook.create).not.toHaveBeenCalled();
   });
 
-  it("files a jurnal against the caller's own id", async () => {
-    vi.mocked(prisma.jurnal.create).mockResolvedValue({ id: "jurnal-1" } as never);
+  it("files a logbook against the caller's own id", async () => {
+    vi.mocked(prisma.absensi.findFirst).mockResolvedValue({
+      kehadiran: "Hadir",
+      jamMasuk: new Date(),
+      izinStatus: null,
+    } as never);
+    vi.mocked(prisma.logbook.create).mockResolvedValue({ id: "logbook-1" } as never);
 
-    await portalService.createOwnJurnal(PESERTA, todayIsoDate(), "Kegiatan hari ini");
+    await portalService.createOwnLogbook(PESERTA, todayIsoDate(), "Kegiatan hari ini");
 
-    const [{ data }] = vi.mocked(prisma.jurnal.create).mock.calls[0] as [{ data: Record<string, unknown> }];
+    const [{ data }] = vi.mocked(prisma.logbook.create).mock.calls[0] as [{ data: Record<string, unknown> }];
     expect(data.pesertaMagangId).toBe(PESERTA);
   });
 
+  it("refuses logbook on a non-Hadir day", async () => {
+    vi.mocked(prisma.absensi.findFirst).mockResolvedValue({
+      kehadiran: "Izin",
+      jamMasuk: null,
+      izinStatus: "APPROVED",
+    } as never);
+
+    const result = await portalService.createOwnLogbook(PESERTA, todayIsoDate(), "Kegiatan");
+
+    expect(result.ok).toBe(false);
+    expect(prisma.logbook.create).not.toHaveBeenCalled();
+  });
+
+  it("allows backfilling a forgotten Hadir day", async () => {
+    vi.mocked(prisma.absensi.findFirst).mockResolvedValue({
+      kehadiran: "Hadir",
+      jamMasuk: new Date("2026-07-15T01:00:00.000Z"),
+      izinStatus: null,
+    } as never);
+    vi.mocked(prisma.logbook.create).mockResolvedValue({ id: "logbook-past" } as never);
+
+    const result = await portalService.createOwnLogbook(PESERTA, "2026-07-15", "Kegiatan kemarin");
+
+    expect(result.ok).toBe(true);
+    expect(prisma.logbook.create).toHaveBeenCalled();
+  });
+
   // An id belonging to another peserta must read as "not found", not be editable.
-  it("refuses to edit a jurnal that isn't the caller's", async () => {
-    vi.mocked(prisma.jurnal.findFirst).mockResolvedValue(null);
+  it("refuses to edit a logbook that isn't the caller's", async () => {
+    vi.mocked(prisma.logbook.findFirst).mockResolvedValue(null);
 
-    const result = await portalService.updateOwnJurnal(PESERTA, "jurnal-orang-lain", "Diubah");
+    const result = await portalService.updateOwnLogbook(PESERTA, "logbook-orang-lain", "Diubah");
 
-    expect(result).toEqual({ ok: false, message: "Jurnal tidak ditemukan", status: 404 });
-    expect(prisma.jurnal.update).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, message: "Logbook tidak ditemukan", status: 404 });
+    expect(prisma.logbook.update).not.toHaveBeenCalled();
   });
 
   it("scopes the ownership lookup by both id and peserta", async () => {
-    vi.mocked(prisma.jurnal.findFirst).mockResolvedValue({ id: "jurnal-1" } as never);
-    vi.mocked(prisma.jurnal.update).mockResolvedValue({ id: "jurnal-1" } as never);
+    vi.mocked(prisma.logbook.findFirst).mockResolvedValue({ id: "logbook-1" } as never);
+    vi.mocked(prisma.logbook.update).mockResolvedValue({ id: "logbook-1" } as never);
 
-    await portalService.updateOwnJurnal(PESERTA, "jurnal-1", "Diubah");
+    await portalService.updateOwnLogbook(PESERTA, "logbook-1", "Diubah");
 
-    const [{ where }] = vi.mocked(prisma.jurnal.findFirst).mock.calls[0] as [
+    const [{ where }] = vi.mocked(prisma.logbook.findFirst).mock.calls[0] as [
       { where: Record<string, unknown> },
     ];
-    expect(where).toEqual({ id: "jurnal-1", pesertaMagangId: PESERTA });
+    expect(where).toEqual({ id: "logbook-1", pesertaMagangId: PESERTA });
   });
 });
 

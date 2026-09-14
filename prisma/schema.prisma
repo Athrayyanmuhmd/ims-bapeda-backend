@@ -24,6 +24,7 @@ model User {
 
   pesertaAsBimbingan PesertaMagang[]
   penilaian          Penilaian[]
+  absensiReviewed    Absensi[]       @relation("AbsensiReviewer")
 }
 
 model Divisi {
@@ -53,6 +54,20 @@ enum StatusMagang {
   BERHENTI
 }
 
+// Title-case to match existing absensi rows / UI labels (Hadir, Sakit, …).
+enum Kehadiran {
+  Hadir
+  Sakit
+  Izin
+  Alpa
+}
+
+enum IzinStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model PesertaMagang {
   id                   String       @id @default(uuid())
   name                 String
@@ -76,7 +91,7 @@ model PesertaMagang {
   updatedAt            DateTime     @updatedAt
 
   absensi   Absensi[]
-  jurnal    Jurnal[]
+  logbook   Logbook[]
   penilaian Penilaian[]
   dokumen   Dokumen[]
 }
@@ -84,12 +99,20 @@ model PesertaMagang {
 model Absensi {
   id              String        @id @default(uuid())
   pesertaMagangId String
-  kehadiran       String
+  kehadiran       Kehadiran
   tanggal         DateTime
   jamMasuk        DateTime?
   jamKeluar       DateTime?
   keterangan      String?
+  // Portal self-report workflow. null = staff-authored / no izin request.
+  // While PENDING, kehadiran holds the requested Izin/Sakit but rekap should
+  // treat it as undecided until APPROVED (or Alpa after REJECTED).
+  izinStatus      IzinStatus?
+  izinJenis       Kehadiran?
+  reviewedById    String?
+  reviewedAt      DateTime?
   pesertaMagang   PesertaMagang @relation(fields: [pesertaMagangId], references: [id], onDelete: Cascade)
+  reviewedBy      User?         @relation("AbsensiReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -116,7 +139,7 @@ model Instansi {
   pesertaMagang PesertaMagang[]
 }
 
-model Jurnal {
+model Logbook {
   id              String        @id @default(uuid())
   pesertaMagangId String
   tanggal         DateTime
@@ -124,6 +147,11 @@ model Jurnal {
   pesertaMagang   PesertaMagang @relation(fields: [pesertaMagangId], references: [id], onDelete: Cascade)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+
+  // Same day invariant as Absensi — one logbook entry per peserta per calendar day.
+  // Table kept as "Jurnal" so existing rows migrate without a rename.
+  @@unique([pesertaMagangId, tanggal], map: "Jurnal_pesertaMagangId_tanggal_key")
+  @@map("Jurnal")
 }
 
 model Penilaian {

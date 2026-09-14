@@ -1,3 +1,4 @@
+import { Kehadiran, type IzinStatus, type Prisma } from "@prisma/client";
 import prisma from "../../lib/prisma";
 
 export const absensiSelect = {
@@ -7,6 +8,10 @@ export const absensiSelect = {
   jamMasuk: true,
   jamKeluar: true,
   keterangan: true,
+  izinStatus: true,
+  izinJenis: true,
+  reviewedById: true,
+  reviewedAt: true,
   createdAt: true,
   updatedAt: true,
   pesertaMagang: {
@@ -17,7 +22,8 @@ export const absensiSelect = {
       pembimbingLapangan: { select: { fullName: true } },
     },
   },
-};
+  reviewedBy: { select: { fullName: true } },
+} satisfies Prisma.AbsensiSelect;
 
 export const findMany = (where: object, skip: number, take: number, orderBy: object) =>
   prisma.absensi.findMany({ where, select: absensiSelect, skip, take, orderBy });
@@ -42,14 +48,16 @@ export const pesertaExists = (pesertaMagangId: string, pembimbingId?: string) =>
 
 export const create = (data: {
   pesertaMagangId: string;
-  kehadiran: string;
+  kehadiran: Kehadiran;
   tanggal: Date;
   jamMasuk: Date | null;
   jamKeluar: Date | null;
   keterangan?: string;
+  izinStatus?: IzinStatus | null;
+  izinJenis?: Kehadiran | null;
 }) => prisma.absensi.create({ data, select: absensiSelect });
 
-export const update = (id: string, data: Record<string, unknown>) =>
+export const update = (id: string, data: Prisma.AbsensiUncheckedUpdateInput) =>
   prisma.absensi.update({ where: { id }, data, select: absensiSelect });
 
 export const remove = (id: string) => prisma.absensi.delete({ where: { id } });

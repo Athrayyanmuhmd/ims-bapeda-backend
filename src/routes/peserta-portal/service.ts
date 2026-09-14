@@ -1,9 +1,10 @@
-import bcrypt from "bcryptjs";
+﻿import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import {
   checkInWindowLabel,
   CHECKIN_END,
   CHECKIN_START,
+  CHECKOUT_AUTO_AT,
   dayRange,
   isWithinCheckInWindow,
   nowJam,
@@ -11,9 +12,11 @@ import {
   parseWallClock,
   todayIsoDate,
 } from "../../lib/datetime";
+import { applyAutoCheckout, applyAutoCheckoutMany } from "../../lib/autoCheckout";
 import {
   isWorkingDay,
   loadIndonesiaHolidays,
+  countWorkingDaysInclusive,
   remainingCalendarDays,
   remainingWorkingDays,
 } from "../../lib/indonesiaHolidays";
@@ -59,7 +62,21 @@ type ProfileRow = {
 const presentProfile = async (p: ProfileRow) => {
   const today = todayIsoDate();
   const selesai = p.tanggalSelesai ? p.tanggalSelesai.toISOString().slice(0, 10) : null;
+  const mulai = p.tanggalMulai ? p.tanggalMulai.toISOString().slice(0, 10) : null;
   const holidays = await loadIndonesiaHolidays();
+
+  const totalHariKerja =
+    mulai && selesai ? countWorkingDaysInclusive(mulai, selesai, holidays) : null;
+  const totalHariKalender =
+    mulai && selesai
+      ? Math.max(
+          0,
+          Math.round(
+            (Date.parse(`${selesai}T00:00:00.000Z`) - Date.parse(`${mulai}T00:00:00.000Z`)) /
+              (24 * 60 * 60 * 1000)
+          ) + 1
+        )
+      : null;
 
   return {
     id: p.id,
@@ -77,6 +94,8 @@ const presentProfile = async (p: ProfileRow) => {
     // Sat/Sun and Indonesian national + cuti bersama from the holiday feed.
     sisaHariKalender: remainingCalendarDays(today, selesai),
     sisaHariKerja: remainingWorkingDays(today, selesai, holidays),
+    totalHariKerja,
+    totalHariKalender,
   };
 };
 
@@ -155,6 +174,8 @@ const absensiSelect = {
   jamMasuk: true,
   jamKeluar: true,
   keterangan: true,
+  izinStatus: true,
+  izinJenis: true,
 };
 
 export const listOwnAbsensi = async (pesertaMagangId: string, rows: number) => {
@@ -165,7 +186,7 @@ export const listOwnAbsensi = async (pesertaMagangId: string, rows: number) => {
     take: rows,
   });
 
-  return success(entries);
+  return success(await applyAutoCheckoutMany(entries, absensiSelect));
 };
 
 export const getTodayAbsensi = async (pesertaMagangId: string) => {
@@ -174,7 +195,8 @@ export const getTodayAbsensi = async (pesertaMagangId: string) => {
     select: absensiSelect,
   });
 
-  return success(absensi);
+  if (!absensi) return success(null);
+  return success(await applyAutoCheckout(absensi, absensiSelect));
 };
 
 // Check-in/check-out are restricted to today on purpose: letting a peserta
@@ -194,10 +216,17 @@ export const checkIn = async (pesertaMagangId: string, jam?: string) => {
 
   const existing = await prisma.absensi.findFirst({
     where: { pesertaMagangId, tanggal: dayRange(today) },
-    select: { id: true, jamMasuk: true, kehadiran: true },
+    select: { id: true, jamMasuk: true, kehadiran: true, izinStatus: true },
   });
 
-  if (existing?.kehadiran === "Izin" || existing?.kehadiran === "Sakit") {
+  if (existing?.izinStatus === "PENDING") {
+    return failure("Pengajuan izin/sakit Anda masih menunggu persetujuan pembimbing");
+  }
+
+  if (
+    (existing?.kehadiran === "Izin" || existing?.kehadiran === "Sakit") &&
+    existing.izinStatus !== "REJECTED"
+  ) {
     return failure("Anda sudah mengajukan izin/sakit hari ini");
   }
 
@@ -208,7 +237,14 @@ export const checkIn = async (pesertaMagangId: string, jam?: string) => {
   if (existing) {
     const updated = await prisma.absensi.update({
       where: { id: existing.id },
-      data: { kehadiran: "Hadir", jamMasuk },
+      data: {
+        kehadiran: "Hadir",
+        jamMasuk,
+        izinStatus: null,
+        izinJenis: null,
+        reviewedById: null,
+        reviewedAt: null,
+      },
       select: absensiSelect,
     });
     return success(updated);
@@ -232,18 +268,30 @@ export const checkOut = async (pesertaMagangId: string, jam?: string) => {
 
   const existing = await prisma.absensi.findFirst({
     where: { pesertaMagangId, tanggal: dayRange(today) },
-    select: { id: true, jamMasuk: true, jamKeluar: true, kehadiran: true },
+    select: absensiSelect,
   });
 
-  if (existing?.kehadiran === "Izin" || existing?.kehadiran === "Sakit") {
+  if (!existing) return failure("Anda belum check-in hari ini");
+
+  // Past CHECKOUT_AUTO_AT, fill jamKeluar=17:00 before refusing a second checkout.
+  const closed = await applyAutoCheckout(existing, absensiSelect);
+
+  if (closed.izinStatus === "PENDING") {
+    return failure("Pengajuan izin/sakit masih menunggu persetujuan");
+  }
+
+  if (
+    (closed.kehadiran === "Izin" || closed.kehadiran === "Sakit") &&
+    closed.izinStatus !== "REJECTED"
+  ) {
     return failure("Tidak ada check-out untuk hari izin/sakit");
   }
 
-  if (!existing?.jamMasuk) return failure("Anda belum check-in hari ini");
-  if (existing.jamKeluar) return failure("Anda sudah melakukan check-out hari ini");
+  if (!closed.jamMasuk) return failure("Anda belum check-in hari ini");
+  if (closed.jamKeluar) return failure("Anda sudah melakukan check-out hari ini");
 
   const updated = await prisma.absensi.update({
-    where: { id: existing.id },
+    where: { id: closed.id },
     data: { jamKeluar: parseWallClock(`${today}T${jam ?? nowJam()}:00`) },
     select: absensiSelect,
   });
@@ -254,8 +302,8 @@ export const checkOut = async (pesertaMagangId: string, jam?: string) => {
 export const PORTAL_IZIN_OPTIONS = ["Izin", "Sakit"] as const;
 export type PortalIzinJenis = (typeof PORTAL_IZIN_OPTIONS)[number];
 
-// Self-reported absence for today. No approval workflow yet — pembimbing can
-// still correct the roster. Blocks further check-in the same day.
+// Self-reported absence for today. Creates a PENDING request — pembimbing must
+// approve before it counts as final Izin/Sakit in rekap. Blocks check-in while pending.
 export const reportIzin = async (
   pesertaMagangId: string,
   jenis: PortalIzinJenis,
@@ -271,21 +319,39 @@ export const reportIzin = async (
   const today = todayIsoDate();
   const existing = await prisma.absensi.findFirst({
     where: { pesertaMagangId, tanggal: dayRange(today) },
-    select: { id: true, jamMasuk: true, kehadiran: true },
+    select: { id: true, jamMasuk: true, kehadiran: true, izinStatus: true },
   });
 
   if (existing?.jamMasuk || existing?.kehadiran === "Hadir") {
     return failure("Sudah check-in hari ini; hubungi pembimbing untuk koreksi");
   }
 
-  if (existing?.kehadiran === "Izin" || existing?.kehadiran === "Sakit") {
+  if (existing?.izinStatus === "PENDING") {
+    return failure("Pengajuan izin/sakit Anda masih menunggu persetujuan");
+  }
+
+  if (
+    (existing?.kehadiran === "Izin" || existing?.kehadiran === "Sakit") &&
+    existing.izinStatus !== "REJECTED"
+  ) {
     return failure("Anda sudah mengajukan izin/sakit hari ini");
   }
+
+  const data = {
+    kehadiran: jenis,
+    izinStatus: "PENDING" as const,
+    izinJenis: jenis,
+    keterangan: note || null,
+    jamMasuk: null,
+    jamKeluar: null,
+    reviewedById: null,
+    reviewedAt: null,
+  };
 
   if (existing) {
     const updated = await prisma.absensi.update({
       where: { id: existing.id },
-      data: { kehadiran: jenis, keterangan: note || null, jamMasuk: null, jamKeluar: null },
+      data,
       select: absensiSelect,
     });
     return success(updated);
@@ -295,9 +361,8 @@ export const reportIzin = async (
     const created = await prisma.absensi.create({
       data: {
         pesertaMagangId,
-        kehadiran: jenis,
         tanggal: parseDateOnly(today),
-        keterangan: note || null,
+        ...data,
       },
       select: absensiSelect,
     });
@@ -315,16 +380,17 @@ export const getCheckInWindow = () =>
     label: checkInWindowLabel(),
     isOpen: isWithinCheckInWindow(),
     now: nowJam(),
+    autoCheckoutAt: CHECKOUT_AUTO_AT,
   });
 
-/* ---------------- jurnal ---------------- */
+/* ---------------- logbook ---------------- */
 
-const jurnalSelect = { id: true, tanggal: true, kegiatan: true, createdAt: true };
+const logbookSelect = { id: true, tanggal: true, kegiatan: true, createdAt: true };
 
-export const listOwnJurnal = async (pesertaMagangId: string, rows: number) => {
-  const entries = await prisma.jurnal.findMany({
+export const listOwnLogbook = async (pesertaMagangId: string, rows: number) => {
+  const entries = await prisma.logbook.findMany({
     where: { pesertaMagangId },
-    select: jurnalSelect,
+    select: logbookSelect,
     orderBy: { tanggal: "desc" },
     take: rows,
   });
@@ -332,45 +398,66 @@ export const listOwnJurnal = async (pesertaMagangId: string, rows: number) => {
   return success(entries);
 };
 
-export const createOwnJurnal = async (
+export const createOwnLogbook = async (
   pesertaMagangId: string,
   tanggal: string,
   kegiatan: string
 ) => {
-  // No future-dated entries — a jurnal is a record of work already done.
+  // No future-dated entries — a logbook is a record of work already done.
+  // Past days stay writable forever so a forgotten entry can still be filed,
+  // but only on days the peserta was actually Hadir (not Izin/Sakit/Alpa/blank).
   if (tanggal > todayIsoDate()) {
-    return failure("Tidak bisa menulis jurnal untuk tanggal yang belum terjadi");
+    return failure("Tidak bisa menulis logbook untuk tanggal yang belum terjadi");
   }
 
-  const jurnal = await prisma.jurnal.create({
-    data: { pesertaMagangId, tanggal: parseDateOnly(tanggal), kegiatan },
-    select: jurnalSelect,
+  const absensi = await prisma.absensi.findFirst({
+    where: { pesertaMagangId, tanggal: dayRange(tanggal) },
+    select: { kehadiran: true, izinStatus: true, jamMasuk: true },
   });
 
-  return success(jurnal);
+  if (!absensi || absensi.izinStatus === "PENDING") {
+    return failure("Logbook hanya untuk hari Hadir. Absensi tanggal ini belum tercatat sebagai Hadir");
+  }
+
+  if (absensi.kehadiran !== "Hadir" || !absensi.jamMasuk) {
+    return failure("Logbook tidak bisa diisi pada hari Izin, Sakit, atau Alpa");
+  }
+
+  try {
+    const logbook = await prisma.logbook.create({
+      data: { pesertaMagangId, tanggal: parseDateOnly(tanggal), kegiatan },
+      select: logbookSelect,
+    });
+    return success(logbook);
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      return failure("Logbook untuk tanggal ini sudah ada — silakan edit entri yang ada", 409);
+    }
+    throw error;
+  }
 };
 
-export const updateOwnJurnal = async (
+export const updateOwnLogbook = async (
   pesertaMagangId: string,
   id: string,
   kegiatan: string
 ) => {
   // Scoped findFirst, not findUnique: an id belonging to someone else must read
   // as "not found" rather than being editable.
-  const existing = await prisma.jurnal.findFirst({
+  const existing = await prisma.logbook.findFirst({
     where: { id, pesertaMagangId },
     select: { id: true },
   });
 
-  if (!existing) return failure("Jurnal tidak ditemukan", 404);
+  if (!existing) return failure("Logbook tidak ditemukan", 404);
 
-  const jurnal = await prisma.jurnal.update({
+  const logbook = await prisma.logbook.update({
     where: { id },
     data: { kegiatan },
-    select: jurnalSelect,
+    select: logbookSelect,
   });
 
-  return success(jurnal);
+  return success(logbook);
 };
 
 /* ---------------- read-only ---------------- */

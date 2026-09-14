@@ -1,7 +1,10 @@
+import { IzinStatus, Kehadiran } from "@prisma/client";
+import { closeOpenCheckoutsForDate } from "../../lib/autoCheckout";
 import { dayRange, endOfDay, parseDateOnly, parseWallClock } from "../../lib/datetime";
 import { PaginationParams } from "../../lib/pagination";
 import { isUniqueViolation } from "../../lib/prisma";
 import { success, failure } from "../../lib/serviceResult";
+import type { Prisma } from "@prisma/client";
 import * as absensiRepository from "./repository";
 
 type AbsensiWithRelations = Awaited<ReturnType<typeof absensiRepository.findById>>;
@@ -17,6 +20,10 @@ const present = (a: NonNullable<AbsensiWithRelations>) => ({
   jamMasuk: a.jamMasuk,
   jamKeluar: a.jamKeluar,
   keterangan: a.keterangan,
+  izinStatus: a.izinStatus,
+  izinJenis: a.izinJenis,
+  reviewedBy: a.reviewedBy?.fullName ?? null,
+  reviewedAt: a.reviewedAt,
   createdAt: a.createdAt,
   updatedAt: a.updatedAt,
 });
@@ -26,6 +33,7 @@ interface ListAbsensiFilters {
   dariTanggal?: string;
   sampaiTanggal?: string;
   pesertaMagangId?: string;
+  izinStatus?: IzinStatus;
 }
 
 // An exact `tanggal` wins over a range; otherwise either end of the range is
@@ -62,9 +70,17 @@ export const listAbsensi = async (
 
   const pesertaWhere = filters.pesertaMagangId ? { pesertaMagangId: filters.pesertaMagangId } : {};
 
+  const izinWhere = filters.izinStatus ? { izinStatus: filters.izinStatus } : {};
+
   const scopeWhere = pembimbingId ? { pesertaMagang: { pembimbingLapanganId: pembimbingId } } : {};
 
-  const where = { ...searchWhere, ...tanggalWhere, ...pesertaWhere, ...scopeWhere };
+  const where = { ...searchWhere, ...tanggalWhere, ...pesertaWhere, ...izinWhere, ...scopeWhere };
+
+  // Stamp missing jamKeluar=17:00 before the roster/rekap is read, so open
+  // Hadir rows don't look unfinished after office hours.
+  if (filters.tanggal) {
+    await closeOpenCheckoutsForDate(filters.tanggal);
+  }
 
   const [data, totalData] = await Promise.all([
     absensiRepository.findMany(where, skip, rows, orderKey === "tanggal" ? { tanggal: orderRule } : { createdAt: orderRule }),
@@ -72,6 +88,16 @@ export const listAbsensi = async (
   ]);
 
   return success({ entries: data.map(present), totalData, totalPage: Math.ceil(totalData / rows) });
+};
+
+export const listPendingIzin = async (pembimbingId?: string) => {
+  const where = {
+    izinStatus: IzinStatus.PENDING,
+    ...(pembimbingId ? { pesertaMagang: { pembimbingLapanganId: pembimbingId } } : {}),
+  };
+
+  const data = await absensiRepository.findMany(where, 0, 100, { tanggal: "desc" as const });
+  return success(data.map(present));
 };
 
 export const getAbsensiDetail = async (id: string, pembimbingId?: string) => {
@@ -82,7 +108,7 @@ export const getAbsensiDetail = async (id: string, pembimbingId?: string) => {
 
 interface CreateAbsensiInput {
   pesertaMagangId: string;
-  kehadiran: string;
+  kehadiran: Kehadiran;
   tanggal: string;
   jamMasuk?: string;
   jamKeluar?: string;
@@ -114,7 +140,7 @@ export const createAbsensi = async (input: CreateAbsensiInput, pembimbingId?: st
 };
 
 interface UpdateAbsensiInput {
-  kehadiran?: string;
+  kehadiran?: Kehadiran;
   tanggal?: string;
   jamMasuk?: string;
   jamKeluar?: string;
@@ -130,9 +156,17 @@ export const updateAbsensi = async (id: string, input: UpdateAbsensiInput, pembi
   if (input.tanggal) data.tanggal = parseDateOnly(input.tanggal);
   if (input.keterangan !== undefined) data.keterangan = input.keterangan;
 
+  // Staff override closes any portal izin request — the roster mark is final.
+  if (input.kehadiran) {
+    data.izinStatus = null;
+    data.izinJenis = null;
+    data.reviewedById = null;
+    data.reviewedAt = null;
+  }
+
   // Sakit/Izin/Alpa don't clock in — clear any leftover jam from a previous
   // Hadir mark instead of letting stale times sit next to the new status.
-  if (input.kehadiran && input.kehadiran !== "Hadir") {
+  if (input.kehadiran && input.kehadiran !== Kehadiran.Hadir) {
     data.jamMasuk = null;
     data.jamKeluar = null;
   } else {
@@ -141,7 +175,10 @@ export const updateAbsensi = async (id: string, input: UpdateAbsensiInput, pembi
   }
 
   try {
-    const absensi = await absensiRepository.update(id, data);
+    const absensi = await absensiRepository.update(
+      id,
+      data as Prisma.AbsensiUncheckedUpdateInput
+    );
     return success(present(absensi));
   } catch (error) {
     // Moving a row onto a date the peserta already has an entry for.
@@ -150,6 +187,63 @@ export const updateAbsensi = async (id: string, input: UpdateAbsensiInput, pembi
     }
     throw error;
   }
+};
+
+export const approveIzin = async (id: string, reviewerId: string, pembimbingId?: string) => {
+  const existing = await absensiRepository.findById(id, pembimbingId);
+  if (!existing) return failure("Absensi tidak ditemukan", 404);
+  if (existing.izinStatus !== IzinStatus.PENDING) {
+    return failure("Pengajuan izin ini sudah diproses");
+  }
+
+  const jenis = existing.izinJenis ?? existing.kehadiran;
+  if (jenis !== Kehadiran.Izin && jenis !== Kehadiran.Sakit) {
+    return failure("Jenis izin tidak valid");
+  }
+
+  const absensi = await absensiRepository.update(id, {
+    kehadiran: jenis,
+    izinStatus: IzinStatus.APPROVED,
+    izinJenis: jenis,
+    jamMasuk: null,
+    jamKeluar: null,
+    reviewedById: reviewerId,
+    reviewedAt: new Date(),
+  });
+
+  return success(present(absensi));
+};
+
+export const rejectIzin = async (
+  id: string,
+  reviewerId: string,
+  pembimbingId?: string,
+  catatan?: string
+) => {
+  const existing = await absensiRepository.findById(id, pembimbingId);
+  if (!existing) return failure("Absensi tidak ditemukan", 404);
+  if (existing.izinStatus !== IzinStatus.PENDING) {
+    return failure("Pengajuan izin ini sudah diproses");
+  }
+
+  const note = catatan?.trim();
+  const keterangan = note
+    ? [existing.keterangan, `Ditolak: ${note}`].filter(Boolean).join(" · ")
+    : existing.keterangan
+      ? `${existing.keterangan} · Ditolak`
+      : "Ditolak pembimbing";
+
+  const absensi = await absensiRepository.update(id, {
+    kehadiran: Kehadiran.Alpa,
+    izinStatus: IzinStatus.REJECTED,
+    jamMasuk: null,
+    jamKeluar: null,
+    keterangan,
+    reviewedById: reviewerId,
+    reviewedAt: new Date(),
+  });
+
+  return success(present(absensi));
 };
 
 export const deleteAbsensi = async (id: string, pembimbingId?: string) => {

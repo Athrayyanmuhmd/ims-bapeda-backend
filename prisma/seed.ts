@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+﻿import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -207,12 +207,12 @@ async function main() {
     },
   });
 
-  // Jurnal contoh
-  await prisma.jurnal.upsert({
-    where: { id: "jurnal-1" },
+  // logbook contoh
+  await prisma.logbook.upsert({
+    where: { id: "logbook-1" },
     update: {},
     create: {
-      id: "jurnal-1",
+      id: "logbook-1",
       pesertaMagangId: peserta1.id,
       tanggal: today,
       kegiatan: "Mempelajari struktur database dan membantu setup environment development.",

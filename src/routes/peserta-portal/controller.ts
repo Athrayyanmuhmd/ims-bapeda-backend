@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+﻿import { Request, Response } from "express";
 import { ok, fail } from "../../lib/response";
 import { isValidEmail } from "../../lib/validate";
 import { PesertaRequest } from "../../middleware/authPeserta";
@@ -109,13 +109,13 @@ export const reportIzin = async (req: PesertaRequest, res: Response) => {
   ok(res, result.data, `${jenis} berhasil diajukan`);
 };
 
-export const listJurnal = async (req: PesertaRequest, res: Response) => {
-  const result = await portalService.listOwnJurnal(own(req), clampRows(req.query.rows));
+export const listLogbook = async (req: PesertaRequest, res: Response) => {
+  const result = await portalService.listOwnLogbook(own(req), clampRows(req.query.rows));
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
   ok(res, result.data);
 };
 
-export const createJurnal = async (req: PesertaRequest, res: Response) => {
+export const createLogbook = async (req: PesertaRequest, res: Response) => {
   const { tanggal, kegiatan } = req.body as { tanggal?: string; kegiatan?: string };
 
   if (!tanggal || !kegiatan?.trim()) {
@@ -123,13 +123,13 @@ export const createJurnal = async (req: PesertaRequest, res: Response) => {
     return;
   }
 
-  const result = await portalService.createOwnJurnal(own(req), tanggal, kegiatan.trim());
+  const result = await portalService.createOwnLogbook(own(req), tanggal, kegiatan.trim());
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
 
-  ok(res, result.data, "Jurnal berhasil disimpan");
+  ok(res, result.data, "Logbook berhasil disimpan");
 };
 
-export const updateJurnal = async (req: PesertaRequest, res: Response) => {
+export const updateLogbook = async (req: PesertaRequest, res: Response) => {
   const { kegiatan } = req.body as { kegiatan?: string };
 
   if (!kegiatan?.trim()) {
@@ -137,14 +137,14 @@ export const updateJurnal = async (req: PesertaRequest, res: Response) => {
     return;
   }
 
-  const result = await portalService.updateOwnJurnal(
+  const result = await portalService.updateOwnLogbook(
     own(req),
     req.params.id as string,
     kegiatan.trim()
   );
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
 
-  ok(res, result.data, "Jurnal berhasil diupdate");
+  ok(res, result.data, "Logbook berhasil diupdate");
 };
 
 export const listPenilaian = async (req: PesertaRequest, res: Response) => {

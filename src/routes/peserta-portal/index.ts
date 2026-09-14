@@ -1,4 +1,4 @@
-import { Router } from "express";
+﻿import { Router } from "express";
 import { rateLimit } from "../../lib/rateLimit";
 import { authenticatePeserta } from "../../middleware/authPeserta";
 import {
@@ -11,9 +11,9 @@ import {
   checkOut,
   getCheckInWindow,
   reportIzin,
-  listJurnal,
-  createJurnal,
-  updateJurnal,
+  listLogbook,
+  createLogbook,
+  updateLogbook,
   listPenilaian,
   listDokumen,
 } from "./controller";
@@ -38,9 +38,9 @@ router.post("/absensi/check-in", checkIn);
 router.post("/absensi/check-out", checkOut);
 router.post("/absensi/izin", rateLimit(15 * 60 * 1000, 20), reportIzin);
 
-router.get("/jurnal", listJurnal);
-router.post("/jurnal", createJurnal);
-router.put("/jurnal/:id", updateJurnal);
+router.get("/logbook", listLogbook);
+router.post("/logbook", createLogbook);
+router.put("/logbook/:id", updateLogbook);
 
 // Read-only: a peserta sees their assessment and documents but never edits them.
 router.get("/penilaian", listPenilaian);

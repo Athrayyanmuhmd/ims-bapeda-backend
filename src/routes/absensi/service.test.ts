@@ -13,6 +13,10 @@ const fakeAbsensi = (overrides: Partial<Record<string, unknown>> = {}) => ({
   jamMasuk: new Date("2026-07-16T08:00:00"),
   jamKeluar: new Date("2026-07-16T17:00:00"),
   keterangan: null,
+  izinStatus: null,
+  izinJenis: null,
+  reviewedById: null,
+  reviewedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   pesertaMagang: {
@@ -21,6 +25,7 @@ const fakeAbsensi = (overrides: Partial<Record<string, unknown>> = {}) => ({
     divisi: { name: "IT" },
     pembimbingLapangan: { fullName: "Budi Santoso" },
   },
+  reviewedBy: null,
   ...overrides,
 });
 
@@ -37,7 +42,13 @@ describe("absensi service — updateAbsensi", () => {
 
     expect(absensiRepository.update).toHaveBeenCalledWith(
       "absensi-1",
-      expect.objectContaining({ kehadiran: "Sakit", jamMasuk: null, jamKeluar: null })
+      expect.objectContaining({
+        kehadiran: "Sakit",
+        jamMasuk: null,
+        jamKeluar: null,
+        izinStatus: null,
+        izinJenis: null,
+      })
     );
   });
 
@@ -45,7 +56,7 @@ describe("absensi service — updateAbsensi", () => {
     vi.mocked(absensiRepository.findById).mockResolvedValue(fakeAbsensi() as never);
     vi.mocked(absensiRepository.update).mockResolvedValue(fakeAbsensi() as never);
 
-    for (const kehadiran of ["Izin", "Alpa"]) {
+    for (const kehadiran of ["Izin", "Alpa"] as const) {
       vi.mocked(absensiRepository.update).mockClear();
       await absensiService.updateAbsensi("absensi-1", { kehadiran });
 
@@ -232,5 +243,73 @@ describe("absensi service — pembimbing scoping", () => {
     expect(absensiRepository.findById).toHaveBeenNthCalledWith(2, "absensi-lain", "user-pembimbing");
     expect(absensiRepository.update).not.toHaveBeenCalled();
     expect(absensiRepository.remove).not.toHaveBeenCalled();
+  });
+});
+
+describe("absensi service — approve / reject izin", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("approves a pending izin into final Izin/Sakit", async () => {
+    vi.mocked(absensiRepository.findById).mockResolvedValue(
+      fakeAbsensi({
+        kehadiran: "Izin",
+        izinStatus: "PENDING",
+        izinJenis: "Izin",
+        jamMasuk: null,
+        jamKeluar: null,
+      }) as never
+    );
+    vi.mocked(absensiRepository.update).mockResolvedValue(
+      fakeAbsensi({ kehadiran: "Izin", izinStatus: "APPROVED", izinJenis: "Izin" }) as never
+    );
+
+    const result = await absensiService.approveIzin("absensi-1", "user-1");
+
+    expect(result.ok).toBe(true);
+    expect(absensiRepository.update).toHaveBeenCalledWith(
+      "absensi-1",
+      expect.objectContaining({
+        kehadiran: "Izin",
+        izinStatus: "APPROVED",
+        reviewedById: "user-1",
+      })
+    );
+  });
+
+  it("rejects a pending izin as Alpa", async () => {
+    vi.mocked(absensiRepository.findById).mockResolvedValue(
+      fakeAbsensi({
+        kehadiran: "Sakit",
+        izinStatus: "PENDING",
+        izinJenis: "Sakit",
+        keterangan: "Demam",
+      }) as never
+    );
+    vi.mocked(absensiRepository.update).mockResolvedValue(
+      fakeAbsensi({ kehadiran: "Alpa", izinStatus: "REJECTED" }) as never
+    );
+
+    const result = await absensiService.rejectIzin("absensi-1", "user-1");
+
+    expect(result.ok).toBe(true);
+    expect(absensiRepository.update).toHaveBeenCalledWith(
+      "absensi-1",
+      expect.objectContaining({
+        kehadiran: "Alpa",
+        izinStatus: "REJECTED",
+        reviewedById: "user-1",
+      })
+    );
+  });
+
+  it("refuses to approve a non-pending row", async () => {
+    vi.mocked(absensiRepository.findById).mockResolvedValue(
+      fakeAbsensi({ izinStatus: "APPROVED", izinJenis: "Izin", kehadiran: "Izin" }) as never
+    );
+
+    const result = await absensiService.approveIzin("absensi-1", "user-1");
+
+    expect(result.ok).toBe(false);
+    expect(absensiRepository.update).not.toHaveBeenCalled();
   });
 });

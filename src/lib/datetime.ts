@@ -50,6 +50,15 @@ export const endOfDay = (value: string): Date =>
 export const todayIsoDate = (): string =>
   new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIMEZONE }).format(new Date());
 
+// Whole calendar days from today (office zone) until a stored Date/ISO.
+// Negative = already past. Matches the backoffice daysUntil helper.
+export const daysUntil = (value: Date | string): number => {
+  const iso = typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
+  const today = parseDateOnly(todayIsoDate()).getTime();
+  const target = parseDateOnly(iso).getTime();
+  return Math.round((target - today) / MS_PER_DAY);
+};
+
 // Current wall-clock HH:mm in the office zone, so a server-stamped check-in
 // matches the time the peserta sees on their own screen.
 export const nowJam = (): string =>
@@ -64,6 +73,10 @@ export const nowJam = (): string =>
 // exclusive end). Override with CHECKIN_START / CHECKIN_END (HH:mm).
 export const CHECKIN_START = process.env.CHECKIN_START ?? "07:00";
 export const CHECKIN_END = process.env.CHECKIN_END ?? "09:00";
+
+// After this office-local time, open Hadir rows (jamMasuk set, jamKeluar null)
+// are stamped with jamKeluar = CHECKOUT_AUTO_AT so the day doesn't stay blank.
+export const CHECKOUT_AUTO_AT = process.env.CHECKOUT_AUTO_AT ?? "17:00";
 
 const jamToMinutes = (hhmm: string): number => {
   const [h, m] = hhmm.split(":").map((part) => Number.parseInt(part, 10));
@@ -80,3 +93,14 @@ export const isWithinCheckInWindow = (jam = nowJam()): boolean => {
 };
 
 export const checkInWindowLabel = () => `${CHECKIN_START}–${CHECKIN_END} WIB`;
+
+// Past calendar days always qualify; today only after CHECKOUT_AUTO_AT.
+export const shouldAutoCheckout = (tanggalIso: string, jam = nowJam()): boolean => {
+  const today = todayIsoDate();
+  if (tanggalIso < today) return true;
+  if (tanggalIso > today) return false;
+  const now = jamToMinutes(jam);
+  const cutoff = jamToMinutes(CHECKOUT_AUTO_AT);
+  if ([now, cutoff].some((n) => Number.isNaN(n))) return false;
+  return now >= cutoff;
+};

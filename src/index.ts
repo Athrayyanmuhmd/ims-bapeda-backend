@@ -1,4 +1,4 @@
-import "dotenv/config";
+﻿import "dotenv/config";
 import express, { NextFunction, Request, Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -15,10 +15,11 @@ import roleRoutes from "./routes/roles";
 import pesertaMagangRoutes from "./routes/peserta-magang";
 import absensiRoutes from "./routes/absensi";
 import instansiRoutes from "./routes/instansi";
-import jurnalRoutes from "./routes/jurnal";
+import logbookRoutes from "./routes/logbook";
 import penilaianRoutes from "./routes/penilaian";
 import dokumenRoutes from "./routes/dokumen";
 import pesertaPortalRoutes from "./routes/peserta-portal";
+import notificationsRoutes from "./routes/notifications";
 
 const app = express();
 const PORT = process.env.PORT ?? 3001;
@@ -44,9 +45,10 @@ app.use("/roles", roleRoutes);
 app.use("/peserta-magang", pesertaMagangRoutes);
 app.use("/absensi", absensiRoutes);
 app.use("/instansi", instansiRoutes);
-app.use("/jurnal", jurnalRoutes);
+app.use("/logbook", logbookRoutes);
 app.use("/penilaian", penilaianRoutes);
 app.use("/dokumen", dokumenRoutes);
+app.use("/notifications", notificationsRoutes);
 // Portal peserta magang — its own auth middleware and token audience, kept
 // separate from every staff route above.
 app.use("/portal", pesertaPortalRoutes);
