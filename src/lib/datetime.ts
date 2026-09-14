@@ -59,3 +59,24 @@ export const nowJam = (): string =>
     minute: "2-digit",
     hour12: false,
   }).format(new Date());
+
+// Portal check-in is only allowed inside this office-local window (inclusive start,
+// exclusive end). Override with CHECKIN_START / CHECKIN_END (HH:mm).
+export const CHECKIN_START = process.env.CHECKIN_START ?? "07:00";
+export const CHECKIN_END = process.env.CHECKIN_END ?? "09:00";
+
+const jamToMinutes = (hhmm: string): number => {
+  const [h, m] = hhmm.split(":").map((part) => Number.parseInt(part, 10));
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return Number.NaN;
+  return h * 60 + m;
+};
+
+export const isWithinCheckInWindow = (jam = nowJam()): boolean => {
+  const now = jamToMinutes(jam);
+  const start = jamToMinutes(CHECKIN_START);
+  const end = jamToMinutes(CHECKIN_END);
+  if ([now, start, end].some((n) => Number.isNaN(n))) return false;
+  return now >= start && now < end;
+};
+
+export const checkInWindowLabel = () => `${CHECKIN_START}–${CHECKIN_END} WIB`;

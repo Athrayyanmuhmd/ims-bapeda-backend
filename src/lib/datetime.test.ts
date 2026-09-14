@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { APP_UTC_OFFSET, dayRange, endOfDay, parseDateOnly, parseWallClock } from "./datetime";
+import {
+  APP_UTC_OFFSET,
+  dayRange,
+  endOfDay,
+  isWithinCheckInWindow,
+  parseDateOnly,
+  parseWallClock,
+} from "./datetime";
 
 describe("parseDateOnly", () => {
   // UTC midnight is what @@unique([pesertaMagangId, tanggal]) relies on, and
@@ -56,5 +63,14 @@ describe("dayRange", () => {
 describe("endOfDay", () => {
   it("is inclusive of the whole named day", () => {
     expect(endOfDay("2026-07-16").toISOString()).toBe("2026-07-16T23:59:59.999Z");
+  });
+});
+
+describe("isWithinCheckInWindow", () => {
+  it("is open at the start and closed at the end (default 07:00–09:00)", () => {
+    expect(isWithinCheckInWindow("07:00")).toBe(true);
+    expect(isWithinCheckInWindow("08:30")).toBe(true);
+    expect(isWithinCheckInWindow("09:00")).toBe(false);
+    expect(isWithinCheckInWindow("06:59")).toBe(false);
   });
 });

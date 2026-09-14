@@ -9,6 +9,8 @@ import {
   getTodayAbsensi,
   checkIn,
   checkOut,
+  getCheckInWindow,
+  reportIzin,
   listJurnal,
   createJurnal,
   updateJurnal,
@@ -31,8 +33,10 @@ router.post("/change-password", rateLimit(15 * 60 * 1000, 10), changePassword);
 
 router.get("/absensi", listAbsensi);
 router.get("/absensi/today", getTodayAbsensi);
+router.get("/absensi/check-in-window", getCheckInWindow);
 router.post("/absensi/check-in", checkIn);
 router.post("/absensi/check-out", checkOut);
+router.post("/absensi/izin", rateLimit(15 * 60 * 1000, 20), reportIzin);
 
 router.get("/jurnal", listJurnal);
 router.post("/jurnal", createJurnal);

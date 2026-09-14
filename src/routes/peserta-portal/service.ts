@@ -1,7 +1,18 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { dayRange, nowJam, parseDateOnly, parseWallClock, todayIsoDate } from "../../lib/datetime";
 import {
+  checkInWindowLabel,
+  CHECKIN_END,
+  CHECKIN_START,
+  dayRange,
+  isWithinCheckInWindow,
+  nowJam,
+  parseDateOnly,
+  parseWallClock,
+  todayIsoDate,
+} from "../../lib/datetime";
+import {
+  isWorkingDay,
   loadIndonesiaHolidays,
   remainingCalendarDays,
   remainingWorkingDays,
@@ -171,11 +182,24 @@ export const getTodayAbsensi = async (pesertaMagangId: string) => {
 // past day stays a staff action.
 export const checkIn = async (pesertaMagangId: string, jam?: string) => {
   const today = todayIsoDate();
+  const holidays = await loadIndonesiaHolidays();
+
+  if (!isWorkingDay(today, holidays)) {
+    return failure("Check-in hanya pada hari kerja (Senin–Jumat, kecuali hari libur)");
+  }
+
+  if (!isWithinCheckInWindow(jam ?? nowJam())) {
+    return failure(`Check-in hanya dibuka pukul ${checkInWindowLabel()}`);
+  }
 
   const existing = await prisma.absensi.findFirst({
     where: { pesertaMagangId, tanggal: dayRange(today) },
-    select: { id: true, jamMasuk: true },
+    select: { id: true, jamMasuk: true, kehadiran: true },
   });
+
+  if (existing?.kehadiran === "Izin" || existing?.kehadiran === "Sakit") {
+    return failure("Anda sudah mengajukan izin/sakit hari ini");
+  }
 
   if (existing?.jamMasuk) return failure("Anda sudah melakukan check-in hari ini");
 
@@ -208,8 +232,12 @@ export const checkOut = async (pesertaMagangId: string, jam?: string) => {
 
   const existing = await prisma.absensi.findFirst({
     where: { pesertaMagangId, tanggal: dayRange(today) },
-    select: { id: true, jamMasuk: true, jamKeluar: true },
+    select: { id: true, jamMasuk: true, jamKeluar: true, kehadiran: true },
   });
+
+  if (existing?.kehadiran === "Izin" || existing?.kehadiran === "Sakit") {
+    return failure("Tidak ada check-out untuk hari izin/sakit");
+  }
 
   if (!existing?.jamMasuk) return failure("Anda belum check-in hari ini");
   if (existing.jamKeluar) return failure("Anda sudah melakukan check-out hari ini");
@@ -222,6 +250,72 @@ export const checkOut = async (pesertaMagangId: string, jam?: string) => {
 
   return success(updated);
 };
+
+export const PORTAL_IZIN_OPTIONS = ["Izin", "Sakit"] as const;
+export type PortalIzinJenis = (typeof PORTAL_IZIN_OPTIONS)[number];
+
+// Self-reported absence for today. No approval workflow yet — pembimbing can
+// still correct the roster. Blocks further check-in the same day.
+export const reportIzin = async (
+  pesertaMagangId: string,
+  jenis: PortalIzinJenis,
+  keterangan?: string
+) => {
+  if (!PORTAL_IZIN_OPTIONS.includes(jenis)) {
+    return failure(`Jenis tidak valid. Pilihan: ${PORTAL_IZIN_OPTIONS.join(", ")}`);
+  }
+
+  const note = keterangan?.trim() ?? "";
+  if (note.length > 500) return failure("Keterangan maksimal 500 karakter");
+
+  const today = todayIsoDate();
+  const existing = await prisma.absensi.findFirst({
+    where: { pesertaMagangId, tanggal: dayRange(today) },
+    select: { id: true, jamMasuk: true, kehadiran: true },
+  });
+
+  if (existing?.jamMasuk || existing?.kehadiran === "Hadir") {
+    return failure("Sudah check-in hari ini; hubungi pembimbing untuk koreksi");
+  }
+
+  if (existing?.kehadiran === "Izin" || existing?.kehadiran === "Sakit") {
+    return failure("Anda sudah mengajukan izin/sakit hari ini");
+  }
+
+  if (existing) {
+    const updated = await prisma.absensi.update({
+      where: { id: existing.id },
+      data: { kehadiran: jenis, keterangan: note || null, jamMasuk: null, jamKeluar: null },
+      select: absensiSelect,
+    });
+    return success(updated);
+  }
+
+  try {
+    const created = await prisma.absensi.create({
+      data: {
+        pesertaMagangId,
+        kehadiran: jenis,
+        tanggal: parseDateOnly(today),
+        keterangan: note || null,
+      },
+      select: absensiSelect,
+    });
+    return success(created);
+  } catch (error) {
+    if (isUniqueViolation(error)) return failure("Anda sudah mengajukan izin/sakit hari ini");
+    throw error;
+  }
+};
+
+export const getCheckInWindow = () =>
+  success({
+    start: CHECKIN_START,
+    end: CHECKIN_END,
+    label: checkInWindowLabel(),
+    isOpen: isWithinCheckInWindow(),
+    now: nowJam(),
+  });
 
 /* ---------------- jurnal ---------------- */
 

@@ -80,6 +80,35 @@ export const checkOut = async (req: PesertaRequest, res: Response) => {
   ok(res, result.data, "Check-out berhasil");
 };
 
+export const getCheckInWindow = async (_req: PesertaRequest, res: Response) => {
+  const result = portalService.getCheckInWindow();
+  if (!result.ok) { fail(res, result.message, null, result.status); return; }
+  ok(res, result.data);
+};
+
+export const reportIzin = async (req: PesertaRequest, res: Response) => {
+  const { jenis, keterangan } = req.body as { jenis?: string; keterangan?: string };
+
+  if (!jenis) {
+    fail(res, "Jenis izin wajib diisi (Izin atau Sakit)");
+    return;
+  }
+
+  if (!portalService.PORTAL_IZIN_OPTIONS.includes(jenis as portalService.PortalIzinJenis)) {
+    fail(res, `Jenis tidak valid. Pilihan: ${portalService.PORTAL_IZIN_OPTIONS.join(", ")}`);
+    return;
+  }
+
+  const result = await portalService.reportIzin(
+    own(req),
+    jenis as portalService.PortalIzinJenis,
+    keterangan
+  );
+  if (!result.ok) { fail(res, result.message, null, result.status); return; }
+
+  ok(res, result.data, `${jenis} berhasil diajukan`);
+};
+
 export const listJurnal = async (req: PesertaRequest, res: Response) => {
   const result = await portalService.listOwnJurnal(own(req), clampRows(req.query.rows));
   if (!result.ok) { fail(res, result.message, null, result.status); return; }

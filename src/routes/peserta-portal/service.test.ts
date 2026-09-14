@@ -17,6 +17,15 @@ vi.mock("../../lib/prisma", () => ({
   isUniqueViolation: () => false,
 }));
 
+vi.mock("../../lib/indonesiaHolidays", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/indonesiaHolidays")>();
+  return {
+    ...actual,
+    loadIndonesiaHolidays: vi.fn(async () => new Set<string>()),
+    isWorkingDay: vi.fn(() => true),
+  };
+});
+
 process.env.JWT_SECRET = "test-secret";
 
 const PESERTA = "peserta-1";
@@ -109,9 +118,10 @@ describe("portal check-in / check-out", () => {
     vi.mocked(prisma.absensi.findFirst).mockResolvedValue({
       id: "absensi-1",
       jamMasuk: new Date(),
+      kehadiran: "Hadir",
     } as never);
 
-    const result = await portalService.checkIn(PESERTA);
+    const result = await portalService.checkIn(PESERTA, "08:00");
 
     expect(result.ok).toBe(false);
     expect(prisma.absensi.create).not.toHaveBeenCalled();
@@ -122,12 +132,23 @@ describe("portal check-in / check-out", () => {
     vi.mocked(prisma.absensi.findFirst).mockResolvedValue(null);
     vi.mocked(prisma.absensi.create).mockResolvedValue({ id: "absensi-1" } as never);
 
-    await portalService.checkIn(PESERTA);
+    await portalService.checkIn(PESERTA, "08:00");
 
-    const [{ data }] = vi.mocked(prisma.absensi.create).mock.calls[0] as [{ data: Record<string, unknown> }];
+    const [{ data }] = vi.mocked(prisma.absensi.create).mock.calls[0] as [
+      { data: Record<string, unknown> },
+    ];
     expect(data.pesertaMagangId).toBe(PESERTA);
     expect((data.tanggal as Date).toISOString().slice(0, 10)).toBe(todayIsoDate());
     expect(data.kehadiran).toBe("Hadir");
+  });
+
+  it("refuses check-in outside the office window", async () => {
+    const result = await portalService.checkIn(PESERTA, "10:00");
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.message).toMatch(/Check-in hanya dibuka/);
+    expect(prisma.absensi.create).not.toHaveBeenCalled();
   });
 
   it("refuses check-out before check-in", async () => {
