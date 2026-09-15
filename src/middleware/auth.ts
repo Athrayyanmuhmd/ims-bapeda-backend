@@ -50,10 +50,21 @@ export const authenticate = async (
     return;
   }
 
-  const user = await authRepository.findByIdBasic(payload.sub);
+  const user = await authRepository.findByIdBasic(payload.sub).catch((error) => {
+    console.error("authenticate db lookup failed", error);
+    fail(
+      res,
+      "Tidak dapat mengakses database. Coba lagi sebentar.",
+      null,
+      503
+    );
+    return null;
+  });
 
   // Same message as an invalid token: a deleted account shouldn't be
-  // distinguishable from a bad token by the response.
+  // distinguishable from a bad token by the response. (Or 503 already sent.)
+  if (res.headersSent) return;
+
   if (!user) {
     fail(res, "Token tidak valid atau sudah expired", null, 401);
     return;

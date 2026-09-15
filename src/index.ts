@@ -6,6 +6,7 @@ import helmet from "helmet";
 // error middleware below instead of crashing the process (Express 4 doesn't
 // do this on its own — Express 5 does, this project isn't on it yet).
 import "express-async-errors";
+import { isDbUnavailable } from "./lib/prisma";
 import { fail } from "./lib/response";
 
 import authRoutes from "./routes/auth";
@@ -69,6 +70,19 @@ app.use("/portal", pesertaPortalRoutes);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err);
+
+  // Don't hide pooler / pause blips behind a generic 500 — the FE toast then
+  // says "Terjadi kesalahan pada server" with no actionable hint.
+  if (isDbUnavailable(err)) {
+    fail(
+      res,
+      "Tidak dapat mengakses database. Coba lagi sebentar, atau cek status Supabase / DATABASE_URL (pooler 6543 + pgbouncer=true).",
+      null,
+      503
+    );
+    return;
+  }
+
   fail(res, "Terjadi kesalahan pada server", null, 500);
 });
 

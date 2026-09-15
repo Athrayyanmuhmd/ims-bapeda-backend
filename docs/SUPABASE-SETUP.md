@@ -24,7 +24,7 @@ Di Vercel project **simagang-bapeda-api**:
 
 | Variable | Nilai |
 |----------|--------|
-| `DATABASE_URL` | Transaction pooler port **6543** + `?pgbouncer=true` |
+| `DATABASE_URL` | Transaction pooler port **6543** + `?pgbouncer=true` (+ opsional `&connection_limit=1`) |
 | `DIRECT_URL` | Session pooler port **5432** (untuk `prisma migrate`) |
 | `FRONTEND_URL` | `https://simagang-bapeda.vercel.app` |
 | `JWT_SECRET` | ≥ 32 karakter |
@@ -32,7 +32,7 @@ Di Vercel project **simagang-bapeda-api**:
 Contoh (ganti `[PASSWORD]`, percent-encode karakter spesial):
 
 ```env
-DATABASE_URL="postgresql://postgres.brgyaorhucichpxtswtb:[PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+DATABASE_URL="postgresql://postgres.brgyaorhucichpxtswtb:[PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1"
 DIRECT_URL="postgresql://postgres.brgyaorhucichpxtswtb:[PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
 FRONTEND_URL="https://simagang-bapeda.vercel.app"
 ```
