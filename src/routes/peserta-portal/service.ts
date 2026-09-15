@@ -144,6 +144,61 @@ export const getProfile = async (pesertaMagangId: string) => {
   return success(await presentProfile(profile));
 };
 
+export const updateOwnProfile = async (
+  pesertaMagangId: string,
+  input: {
+    name: string;
+    phoneNumber?: string | null;
+    currentPassword?: string;
+    newPassword?: string;
+  }
+) => {
+  const name = input.name.trim();
+  if (!name) return failure("Nama wajib diisi");
+
+  const existing = await prisma.pesertaMagang.findUnique({
+    where: { id: pesertaMagangId },
+    select: { id: true, password: true },
+  });
+  if (!existing) return failure("Peserta magang tidak ditemukan", 404);
+
+  const data: {
+    name: string;
+    phoneNumber?: string | null;
+    password?: string;
+  } = { name };
+
+  if (input.phoneNumber !== undefined) {
+    data.phoneNumber = input.phoneNumber?.trim() ? input.phoneNumber.trim() : null;
+  }
+
+  if (input.newPassword) {
+    if (!input.currentPassword) {
+      return failure("Password saat ini wajib diisi untuk mengganti password");
+    }
+    if (input.newPassword.length < MIN_PASSWORD_LENGTH) {
+      return failure(`Password baru minimal ${MIN_PASSWORD_LENGTH} karakter`);
+    }
+    if (input.newPassword === input.currentPassword) {
+      return failure("Password baru harus berbeda dari password saat ini");
+    }
+    if (
+      !existing.password ||
+      !(await bcrypt.compare(input.currentPassword, existing.password))
+    ) {
+      return failure("Password saat ini salah", 401);
+    }
+    data.password = await bcrypt.hash(input.newPassword, 10);
+  }
+
+  await prisma.pesertaMagang.update({
+    where: { id: pesertaMagangId },
+    data,
+  });
+
+  return getProfile(pesertaMagangId);
+};
+
 export const changePassword = async (
   pesertaMagangId: string,
   currentPassword: string,

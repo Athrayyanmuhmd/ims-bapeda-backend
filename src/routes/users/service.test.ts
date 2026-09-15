@@ -7,6 +7,65 @@ import * as userService from "./service";
 vi.mock("./repository");
 vi.mock("bcryptjs");
 
+describe("users service — updateOwnProfile", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("rejects an empty name", async () => {
+    const result = await userService.updateOwnProfile("user-1", { fullName: "  " });
+    expect(result.ok).toBe(false);
+    expect(userRepository.update).not.toHaveBeenCalled();
+  });
+
+  it("updates name without touching password when no new password is given", async () => {
+    vi.mocked(userRepository.findById).mockResolvedValue({
+      id: "user-1",
+      fullName: "Old",
+      email: "a@b.id",
+      phoneNumber: null,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      divisi: null,
+      role: { id: "r1", name: "Pembimbing" },
+    } as never);
+    vi.mocked(userRepository.update).mockResolvedValue({
+      id: "user-1",
+      fullName: "Budi Baru",
+      email: "a@b.id",
+      phoneNumber: "081234567890",
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      divisi: null,
+      role: { id: "r1", name: "Pembimbing" },
+    } as never);
+
+    const result = await userService.updateOwnProfile("user-1", {
+      fullName: "Budi Baru",
+      phoneNumber: "081234567890",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(userRepository.findWithPassword).not.toHaveBeenCalled();
+    expect(userRepository.update).toHaveBeenCalledWith("user-1", {
+      fullName: "Budi Baru",
+      phoneNumber: "081234567890",
+    });
+  });
+
+  it("requires the current password when changing password", async () => {
+    vi.mocked(userRepository.findById).mockResolvedValue({ id: "user-1" } as never);
+
+    const result = await userService.updateOwnProfile("user-1", {
+      fullName: "Budi",
+      newPassword: "newpassword123",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(userRepository.update).not.toHaveBeenCalled();
+  });
+});
+
 describe("users service — changeOwnPassword", () => {
   beforeEach(() => vi.clearAllMocks());
 

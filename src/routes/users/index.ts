@@ -7,6 +7,7 @@ import {
   createUser,
   updateUser,
   deleteUser,
+  updateOwnProfile,
   changeOwnPassword,
 } from "./controller";
 
@@ -19,8 +20,8 @@ router.get("/", listUsers);
 router.post("/", listUsers);
 
 // Declared before "/:id" so the literal path can't be swallowed by the param
-// route. Any role may change their *own* password — throttled because it takes
-// the current password and would otherwise be an online guessing target.
+// route. Any role may update their *own* profile / password.
+router.put("/me", rateLimit(15 * 60 * 1000, 20), updateOwnProfile);
 router.post("/change-password", rateLimit(15 * 60 * 1000, 10), changeOwnPassword);
 
 router.get("/:id", getUserDetail);

@@ -84,6 +84,50 @@ export const updateUser = async (id: string, input: UpdateUserInput) => {
 
 export const MIN_PASSWORD_LENGTH = 8;
 
+interface UpdateOwnProfileInput {
+  fullName: string;
+  phoneNumber?: string | null;
+  currentPassword?: string;
+  newPassword?: string;
+}
+
+// Self-service name/phone (+ optional password). Target is always the session
+// user — never an id from the client.
+export const updateOwnProfile = async (userId: string, input: UpdateOwnProfileInput) => {
+  const fullName = input.fullName.trim();
+  if (!fullName) return failure("Nama wajib diisi");
+
+  const exists = await userRepository.findById(userId);
+  if (!exists) return failure("User tidak ditemukan", 404);
+
+  const data: Record<string, unknown> = { fullName };
+  if (input.phoneNumber !== undefined) {
+    data.phoneNumber = input.phoneNumber?.trim() ? input.phoneNumber.trim() : null;
+  }
+
+  if (input.newPassword) {
+    if (!input.currentPassword) {
+      return failure("Password saat ini wajib diisi untuk mengganti password");
+    }
+    if (input.newPassword.length < MIN_PASSWORD_LENGTH) {
+      return failure(`Password baru minimal ${MIN_PASSWORD_LENGTH} karakter`);
+    }
+    if (input.newPassword === input.currentPassword) {
+      return failure("Password baru harus berbeda dari password saat ini");
+    }
+
+    const withHash = await userRepository.findWithPassword(userId);
+    if (!withHash) return failure("User tidak ditemukan", 404);
+    if (!(await bcrypt.compare(input.currentPassword, withHash.password))) {
+      return failure("Password saat ini salah", 401);
+    }
+    data.password = await bcrypt.hash(input.newPassword, 10);
+  }
+
+  const user = await userRepository.update(userId, data);
+  return success(present(user));
+};
+
 // Self-service, so it verifies the current password rather than trusting the
 // session alone — a stolen cookie shouldn't be enough to lock the real owner out.
 export const changeOwnPassword = async (

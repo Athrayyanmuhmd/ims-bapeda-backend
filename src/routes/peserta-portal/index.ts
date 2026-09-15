@@ -4,6 +4,7 @@ import { authenticatePeserta } from "../../middleware/authPeserta";
 import {
   login,
   getProfile,
+  updateOwnProfile,
   changePassword,
   listAbsensi,
   getTodayAbsensi,
@@ -29,6 +30,7 @@ router.post("/login", rateLimit(15 * 60 * 1000, 10), login);
 router.use(authenticatePeserta);
 
 router.get("/me", getProfile);
+router.put("/me", rateLimit(15 * 60 * 1000, 20), updateOwnProfile);
 router.post("/change-password", rateLimit(15 * 60 * 1000, 10), changePassword);
 
 router.get("/absensi", listAbsensi);

@@ -1,6 +1,6 @@
 ﻿import { Request, Response } from "express";
 import { ok, fail } from "../../lib/response";
-import { isValidEmail } from "../../lib/validate";
+import { isValidEmail, isValidPhoneId } from "../../lib/validate";
 import { PesertaRequest } from "../../middleware/authPeserta";
 import * as portalService from "./service";
 
@@ -37,6 +37,35 @@ export const getProfile = async (req: PesertaRequest, res: Response) => {
   const result = await portalService.getProfile(own(req));
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
   ok(res, result.data);
+};
+
+export const updateOwnProfile = async (req: PesertaRequest, res: Response) => {
+  const { name, phoneNumber, currentPassword, newPassword } = req.body as {
+    name?: string;
+    phoneNumber?: string | null;
+    currentPassword?: string;
+    newPassword?: string;
+  };
+
+  if (!name?.trim()) {
+    fail(res, "Nama wajib diisi");
+    return;
+  }
+
+  if (phoneNumber && !isValidPhoneId(phoneNumber)) {
+    fail(res, "Format nomor HP tidak valid (contoh: 081234567890)");
+    return;
+  }
+
+  const result = await portalService.updateOwnProfile(own(req), {
+    name,
+    phoneNumber,
+    currentPassword,
+    newPassword,
+  });
+  if (!result.ok) { fail(res, result.message, null, result.status); return; }
+
+  ok(res, result.data, "Profil berhasil diperbarui");
 };
 
 export const changePassword = async (req: PesertaRequest, res: Response) => {

@@ -17,6 +17,35 @@ export const listUsers = async (req: AuthRequest, res: Response) => {
 
 // Always acts on req.userId — the target is never taken from the request, so
 // this can't be pointed at another account.
+export const updateOwnProfile = async (req: AuthRequest, res: Response) => {
+  const { fullName, phoneNumber, currentPassword, newPassword } = req.body as {
+    fullName?: string;
+    phoneNumber?: string | null;
+    currentPassword?: string;
+    newPassword?: string;
+  };
+
+  if (!fullName?.trim()) {
+    fail(res, "Nama wajib diisi");
+    return;
+  }
+
+  if (phoneNumber && !isValidPhoneId(phoneNumber)) {
+    fail(res, "Format nomor HP tidak valid (contoh: 081234567890)");
+    return;
+  }
+
+  const result = await userService.updateOwnProfile(req.userId as string, {
+    fullName,
+    phoneNumber,
+    currentPassword,
+    newPassword,
+  });
+  if (!result.ok) { fail(res, result.message, null, result.status); return; }
+
+  ok(res, result.data, "Profil berhasil diperbarui");
+};
+
 export const changeOwnPassword = async (req: AuthRequest, res: Response) => {
   const { currentPassword, newPassword } = req.body as {
     currentPassword?: string;
