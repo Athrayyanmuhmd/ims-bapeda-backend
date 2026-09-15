@@ -100,29 +100,38 @@ const presentProfile = async (p: ProfileRow) => {
 };
 
 export const login = async (email: string, password: string) => {
-  const peserta = await prisma.pesertaMagang.findFirst({
-    where: { email },
-    select: { id: true, password: true, status: true },
-  });
-
-  // Same message whether the email is unknown, the account was never activated,
-  // or the password is wrong — none of those should be distinguishable.
-  if (!peserta?.password || !(await bcrypt.compare(password, peserta.password))) {
-    return failure("Email atau password salah", 401);
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    return failure("Konfigurasi server tidak lengkap (JWT_SECRET)", 500);
   }
 
-  if (peserta.status !== "AKTIF") {
-    return failure("Magang Anda sudah tidak aktif", 403);
+  try {
+    const peserta = await prisma.pesertaMagang.findFirst({
+      where: { email },
+      select: { id: true, password: true, status: true },
+    });
+
+    // Same message whether the email is unknown, the account was never activated,
+    // or the password is wrong — none of those should be distinguishable.
+    if (!peserta?.password || !(await bcrypt.compare(password, peserta.password))) {
+      return failure("Email atau password salah", 401);
+    }
+
+    if (peserta.status !== "AKTIF") {
+      return failure("Magang Anda sudah tidak aktif", 403);
+    }
+
+    const profile = await prisma.pesertaMagang.findUnique({
+      where: { id: peserta.id },
+      select: profileSelect,
+    });
+
+    if (!profile) return failure("Peserta magang tidak ditemukan", 404);
+
+    return success({ peserta: await presentProfile(profile), token: signPesertaToken(peserta.id) });
+  } catch (error) {
+    console.error("[portal.login]", error);
+    return failure("Tidak dapat mengakses database. Coba lagi atau cek status database.", 503);
   }
-
-  const profile = await prisma.pesertaMagang.findUnique({
-    where: { id: peserta.id },
-    select: profileSelect,
-  });
-
-  if (!profile) return failure("Peserta magang tidak ditemukan", 404);
-
-  return success({ peserta: await presentProfile(profile), token: signPesertaToken(peserta.id) });
 };
 
 export const getProfile = async (pesertaMagangId: string) => {

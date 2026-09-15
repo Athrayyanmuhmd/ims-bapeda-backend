@@ -13,27 +13,37 @@ const signToken = (userId: string, role?: string) =>
   });
 
 export const login = async (email: string, password: string) => {
-  const user = await authRepository.findByEmailWithRole(email);
-
-  if (!user || !(await bcrypt.compare(password, user.password))) {
-    return failure("Email atau password salah", 401);
+  if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+    return failure("Konfigurasi server tidak lengkap (JWT_SECRET)", 500);
   }
 
-  if (user.status !== "active") {
-    return failure("Akun tidak aktif", 403);
-  }
+  try {
+    const user = await authRepository.findByEmailWithRole(email);
 
-  const token = signToken(user.id, user.role?.name);
-  return success({
-    user: {
-      id: user.id,
-      fullName: user.fullName,
-      email: user.email,
-      status: user.status,
-      role: user.role?.name ?? null,
-    },
-    token,
-  });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return failure("Email atau password salah", 401);
+    }
+
+    if (user.status !== "active") {
+      return failure("Akun tidak aktif", 403);
+    }
+
+    const token = signToken(user.id, user.role?.name);
+    return success({
+      user: {
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email,
+        status: user.status,
+        role: user.role?.name ?? null,
+      },
+      token,
+    });
+  } catch (error) {
+    console.error("[auth.login]", error);
+    // Supabase free-tier pause / bad DATABASE_URL usually lands here.
+    return failure("Tidak dapat mengakses database. Coba lagi atau cek status database.", 503);
+  }
 };
 
 export const verifyToken = async (token: string) => {
