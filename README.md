@@ -16,12 +16,29 @@ npm install
 ```
 
 ### 2. Konfigurasi environment
-Edit file `.env`:
+Salin `.env.example` → `.env`, lalu isi:
 ```env
 DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/ims_bapeda?schema=public"
-JWT_SECRET="ganti-dengan-secret-yang-kuat"
+JWT_SECRET="ganti-dengan-secret-yang-kuat-minimal-32-karakter"
 PORT=3001
+FRONTEND_URL="http://localhost:3000"
+APP_TIMEZONE="Asia/Jakarta"
+CHECKIN_START="07:00"
+CHECKIN_END="09:00"
+CHECKOUT_AUTO_AT="17:00"
 ```
+
+**Production (Vercel):** `FRONTEND_URL` harus origin FE yang live (CORS). `NEXT_PUBLIC_BE_URL` di backoffice harus URL API ini.
+
+### Soft-launch ops
+```bash
+npm run db:migrate:status   # migrasi sudah diterapkan?
+npm run db:verify           # kolom izin + unique Jurnal
+npm run ops:health          # API + DB (atau: npm run ops:health -- https://api-anda)
+npm run uat:smoke           # smoke login/check-in/logbook (API harus running)
+```
+
+Checklist UI lengkap: [`docs/UAT.md`](docs/UAT.md). Monitor `GET /health` (UptimeRobot / cron) — `db:false` biasanya Supabase pause.
 
 ### 3. Buat database & migrate
 ```bash

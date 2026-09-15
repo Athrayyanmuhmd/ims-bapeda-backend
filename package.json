@@ -8,9 +8,14 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:status": "prisma migrate status",
+    "db:verify": "ts-node scripts/verify-schema.ts",
     "db:generate": "prisma generate",
     "db:seed": "ts-node prisma/seed.ts",
     "db:studio": "prisma studio",
+    "ops:health": "ts-node scripts/health-check.ts",
+    "uat:smoke": "ts-node scripts/uat-smoke.ts",
     "test": "vitest run"
   },
   "dependencies": {

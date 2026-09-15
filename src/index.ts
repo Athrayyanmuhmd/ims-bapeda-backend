@@ -29,12 +29,26 @@ app.use(cors({ origin: process.env.FRONTEND_URL ?? "http://localhost:3000" }));
 app.use(express.json());
 
 app.get("/health", async (_req, res) => {
+  const { APP_TIMEZONE, CHECKOUT_AUTO_AT, todayIsoDate, nowJam } = await import("./lib/datetime");
+  const timezone = APP_TIMEZONE;
+  const time = nowJam();
+  const today = todayIsoDate();
+  const config = {
+    jwtSecret: Boolean(process.env.JWT_SECRET && process.env.JWT_SECRET.length >= 32),
+    databaseUrl: Boolean(process.env.DATABASE_URL),
+    frontendUrl: process.env.FRONTEND_URL ?? "http://localhost:3000",
+    checkinStart: process.env.CHECKIN_START ?? "07:00",
+    checkinEnd: process.env.CHECKIN_END ?? "09:00",
+    checkoutAutoAt: CHECKOUT_AUTO_AT,
+  };
+
   try {
     const { default: prisma } = await import("./lib/prisma");
     await prisma.$queryRaw`SELECT 1`;
-    res.json({ ok: true, db: true });
+    res.json({ ok: true, db: true, timezone, time, today, config });
   } catch {
-    res.status(503).json({ ok: false, db: false });
+    // 503 when DB is unreachable (common after free-tier Supabase pause).
+    res.status(503).json({ ok: false, db: false, timezone, time, today, config });
   }
 });
 
