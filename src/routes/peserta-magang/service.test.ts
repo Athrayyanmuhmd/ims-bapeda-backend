@@ -13,6 +13,22 @@ vi.mock("../../lib/prisma", () => ({
   isUniqueViolation: vi.fn(),
 }));
 
+vi.mock("../../lib/indonesiaHolidays", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/indonesiaHolidays")>();
+  return {
+    ...actual,
+    loadIndonesiaHolidays: vi.fn(async () => new Set<string>()),
+  };
+});
+
+vi.mock("../../lib/datetime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/datetime")>();
+  return {
+    ...actual,
+    todayIsoDate: vi.fn(() => "2026-08-14"),
+  };
+});
+
 import prisma from "../../lib/prisma";
 
 const baseParams = { skip: 0, rows: 10, orderKey: "createdAt", orderRule: "desc" as const, searchFilters: {} };
@@ -70,6 +86,18 @@ describe("peserta magang service — pembimbing scoping", () => {
     await pesertaService.getPesertaDetail("peserta-1", PEMBIMBING);
 
     expect(pesertaRepository.findById).toHaveBeenCalledWith("peserta-1", PEMBIMBING);
+  });
+
+  it("includes working-day totals on detail (elapsed through today)", async () => {
+    vi.mocked(pesertaRepository.findById).mockResolvedValue(fakePeserta() as never);
+
+    const result = await pesertaService.getPesertaDetail("peserta-1");
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // 2026-07-01 .. 2026-08-14 weekdays (no holidays mocked)
+    expect(result.data.hariKerjaPeriode).toBeGreaterThan(0);
+    expect(result.data.totalHariKerja).toBeGreaterThan(result.data.hariKerjaPeriode!);
   });
 
   it("reports a peserta outside the scope as not found", async () => {

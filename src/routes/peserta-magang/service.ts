@@ -1,6 +1,10 @@
 import { StatusMagang } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { parseDateOnly } from "../../lib/datetime";
+import { parseDateOnly, todayIsoDate } from "../../lib/datetime";
+import {
+  countWorkingDaysInclusive,
+  loadIndonesiaHolidays,
+} from "../../lib/indonesiaHolidays";
 import { buildOrderBy, buildSearchWhere, PaginationParams } from "../../lib/pagination";
 import prisma from "../../lib/prisma";
 import { success, failure } from "../../lib/serviceResult";
@@ -21,6 +25,28 @@ const present = ({ password, ...p }: NonNullable<PesertaWithRelations>) => ({
   pembimbingLapangan: p.pembimbingLapangan?.fullName ?? null,
   pembimbingLapanganId: p.pembimbingLapangan?.id ?? null,
 });
+
+/** Working-day stats for laporan / detail — weekends + national holidays excluded. */
+const presentDetail = async (row: NonNullable<PesertaWithRelations>) => {
+  const base = present(row);
+  const mulai = row.tanggalMulai ? row.tanggalMulai.toISOString().slice(0, 10) : null;
+  const selesai = row.tanggalSelesai ? row.tanggalSelesai.toISOString().slice(0, 10) : null;
+  const today = todayIsoDate();
+  const holidays = await loadIndonesiaHolidays();
+
+  const totalHariKerja =
+    mulai && selesai ? countWorkingDaysInclusive(mulai, selesai, holidays) : null;
+
+  // Effective end: full period if already finished, otherwise through today
+  // so mid-periode % isn't crushed by future unused working days.
+  const endEfektif = selesai ? (selesai < today ? selesai : today) : null;
+  const hariKerjaPeriode =
+    mulai && endEfektif && endEfektif >= mulai
+      ? countWorkingDaysInclusive(mulai, endEfektif, holidays)
+      : null;
+
+  return { ...base, totalHariKerja, hariKerjaPeriode };
+};
 
 const SEARCHABLE = ["name", "email", "nim"] as const;
 const SORTABLE = ["name", "email", "nim", "status", "tanggalMulai", "tanggalSelesai", "createdAt"] as const;
@@ -82,7 +108,7 @@ export const listPeserta = async (
 export const getPesertaDetail = async (id: string, pembimbingId?: string) => {
   const peserta = await pesertaRepository.findById(id, pembimbingId);
   if (!peserta) return failure("Peserta magang tidak ditemukan", 404);
-  return success(present(peserta));
+  return success(await presentDetail(peserta));
 };
 
 interface CreatePesertaInput {
