@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma";
 import { fail } from "../lib/response";
 import { PESERTA_TOKEN_TYPE } from "./auth";
+import { orDbUnavailable } from "./orDbUnavailable";
 
 export interface PesertaRequest extends Request {
   pesertaMagangId?: string;
@@ -42,17 +43,13 @@ export const authenticatePeserta = async (
     return;
   }
 
-  const peserta = await prisma.pesertaMagang
-    .findUnique({
+  const peserta = await orDbUnavailable(
+    res,
+    prisma.pesertaMagang.findUnique({
       where: { id: payload.sub },
       select: { id: true, password: true, status: true },
     })
-    .catch((error) => {
-      console.error("authenticatePeserta db lookup failed", error);
-      fail(res, "Tidak dapat mengakses database. Coba lagi sebentar.", null, 503);
-      return null;
-    });
-
+  );
   if (res.headersSent) return;
 
   if (!peserta) {

@@ -11,12 +11,7 @@ const prisma =
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-} else {
-  // Keep the singleton in production too (Vercel warm isolates).
-  globalForPrisma.prisma = prisma;
-}
+globalForPrisma.prisma = prisma;
 
 // A unique-constraint hit is a user-fixable conflict (e.g. absensi already
 // recorded for that peserta on that date), not a server fault — callers turn it

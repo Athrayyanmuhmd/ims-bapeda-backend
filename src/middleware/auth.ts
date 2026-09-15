@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import { fail } from "../lib/response";
 import * as authRepository from "../routes/auth/repository";
+import { orDbUnavailable } from "./orDbUnavailable";
 
 export interface AuthRequest extends Request {
   userId?: string;
@@ -50,21 +51,11 @@ export const authenticate = async (
     return;
   }
 
-  const user = await authRepository.findByIdBasic(payload.sub).catch((error) => {
-    console.error("authenticate db lookup failed", error);
-    fail(
-      res,
-      "Tidak dapat mengakses database. Coba lagi sebentar.",
-      null,
-      503
-    );
-    return null;
-  });
-
-  // Same message as an invalid token: a deleted account shouldn't be
-  // distinguishable from a bad token by the response. (Or 503 already sent.)
+  const user = await orDbUnavailable(res, authRepository.findByIdBasic(payload.sub));
   if (res.headersSent) return;
 
+  // Same message as an invalid token: a deleted account shouldn't be
+  // distinguishable from a bad token by the response.
   if (!user) {
     fail(res, "Token tidak valid atau sudah expired", null, 401);
     return;

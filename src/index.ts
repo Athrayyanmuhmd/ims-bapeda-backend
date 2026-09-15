@@ -74,12 +74,7 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   // Don't hide pooler / pause blips behind a generic 500 — the FE toast then
   // says "Terjadi kesalahan pada server" with no actionable hint.
   if (isDbUnavailable(err)) {
-    fail(
-      res,
-      "Tidak dapat mengakses database. Coba lagi sebentar, atau cek status Supabase / DATABASE_URL (pooler 6543 + pgbouncer=true).",
-      null,
-      503
-    );
+    fail(res, "Tidak dapat mengakses database. Coba lagi sebentar.", null, 503);
     return;
   }
 
