@@ -124,6 +124,13 @@ describe("absensi service — createAbsensi", () => {
 describe("absensi service — listAbsensi filters", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  const andClauses = () => {
+    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0] as [
+      { AND?: Array<Record<string, unknown>> },
+    ];
+    return where.AND ?? [];
+  };
+
   // Asserted in UTC, not via new Date("...T00:00:00"): that form is parsed in the
   // host's timezone, so the old expectation here only passed on a WIB machine.
   it("builds a full-day date range in UTC when a tanggal filter is given", async () => {
@@ -132,13 +139,16 @@ describe("absensi service — listAbsensi filters", () => {
 
     await absensiService.listAbsensi(baseParams, { tanggal: "2026-07-16" });
 
-    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
-    expect(where).toMatchObject({
-      tanggal: {
-        gte: new Date("2026-07-16T00:00:00.000Z"),
-        lt: new Date("2026-07-17T00:00:00.000Z"),
-      },
-    });
+    expect(andClauses()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tanggal: {
+            gte: new Date("2026-07-16T00:00:00.000Z"),
+            lt: new Date("2026-07-17T00:00:00.000Z"),
+          },
+        }),
+      ])
+    );
   });
 
   it("builds an inclusive range from dariTanggal/sampaiTanggal", async () => {
@@ -150,13 +160,16 @@ describe("absensi service — listAbsensi filters", () => {
       sampaiTanggal: "2026-07-31",
     });
 
-    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
-    expect(where).toMatchObject({
-      tanggal: {
-        gte: new Date("2026-07-01T00:00:00.000Z"),
-        lte: new Date("2026-07-31T23:59:59.999Z"),
-      },
-    });
+    expect(andClauses()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tanggal: {
+            gte: new Date("2026-07-01T00:00:00.000Z"),
+            lte: new Date("2026-07-31T23:59:59.999Z"),
+          },
+        }),
+      ])
+    );
   });
 
   it("lets an exact tanggal win over a range", async () => {
@@ -169,8 +182,16 @@ describe("absensi service — listAbsensi filters", () => {
       sampaiTanggal: "2026-12-31",
     });
 
-    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
-    expect(where).toMatchObject({ tanggal: { lt: new Date("2026-07-17T00:00:00.000Z") } });
+    expect(andClauses()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          tanggal: {
+            gte: new Date("2026-07-16T00:00:00.000Z"),
+            lt: new Date("2026-07-17T00:00:00.000Z"),
+          },
+        }),
+      ])
+    );
   });
 
   it("scopes to a single peserta when pesertaMagangId is given", async () => {
@@ -179,8 +200,9 @@ describe("absensi service — listAbsensi filters", () => {
 
     await absensiService.listAbsensi(baseParams, { pesertaMagangId: "peserta-1" });
 
-    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
-    expect(where).toMatchObject({ pesertaMagangId: "peserta-1" });
+    expect(andClauses()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ pesertaMagangId: "peserta-1" })])
+    );
   });
 
   it("applies no date/peserta filter at all when neither is given", async () => {
@@ -189,9 +211,8 @@ describe("absensi service — listAbsensi filters", () => {
 
     await absensiService.listAbsensi(baseParams);
 
-    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
-    expect(where).not.toHaveProperty("tanggal");
-    expect(where).not.toHaveProperty("pesertaMagangId");
+    expect(andClauses().some((clause) => "tanggal" in clause)).toBe(false);
+    expect(andClauses().some((clause) => "pesertaMagangId" in clause)).toBe(false);
   });
 });
 
@@ -206,8 +227,14 @@ describe("absensi service — pembimbing scoping", () => {
 
     await absensiService.listAbsensi(baseParams, {}, "user-pembimbing");
 
-    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
-    expect(where).toMatchObject({ pesertaMagang: { pembimbingLapanganId: "user-pembimbing" } });
+    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0] as [
+      { AND?: Array<Record<string, unknown>> },
+    ];
+    expect(where.AND).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ pesertaMagang: { pembimbingLapanganId: "user-pembimbing" } }),
+      ])
+    );
   });
 
   it("applies no relation filter for an unscoped (Admin) caller", async () => {
@@ -216,8 +243,16 @@ describe("absensi service — pembimbing scoping", () => {
 
     await absensiService.listAbsensi(baseParams);
 
-    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0];
-    expect(where).not.toHaveProperty("pesertaMagang");
+    const [where] = vi.mocked(absensiRepository.findMany).mock.calls[0] as [
+      { AND?: Array<Record<string, unknown>> },
+    ];
+    const hasPesertaScope = (where.AND ?? []).some(
+      (clause) =>
+        clause.pesertaMagang &&
+        typeof clause.pesertaMagang === "object" &&
+        "pembimbingLapanganId" in (clause.pesertaMagang as object)
+    );
+    expect(hasPesertaScope).toBe(false);
   });
 
   it("refuses to create absensi for a peserta outside the scope", async () => {

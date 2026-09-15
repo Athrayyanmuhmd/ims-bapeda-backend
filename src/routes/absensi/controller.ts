@@ -21,6 +21,10 @@ export const listAbsensi = async (req: AuthRequest, res: Response) => {
         | "APPROVED"
         | "REJECTED"
         | undefined,
+      kehadiran: asString(filters.kehadiran) as Kehadiran | undefined,
+      divisiId: asString(filters.divisiId),
+      instansiId: asString(filters.instansiId),
+      pembimbingLapanganId: asString(filters.pembimbingLapanganId),
     },
     pembimbingScope(req)
   );

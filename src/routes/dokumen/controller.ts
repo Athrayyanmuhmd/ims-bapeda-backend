@@ -7,11 +7,16 @@ import * as dokumenService from "./service";
 
 export const listDokumen = async (req: AuthRequest, res: Response) => {
   const { rows, skip, orderKey, orderRule, searchFilters, filters } = parsePagination(req);
-  const pesertaMagangId = typeof filters.pesertaMagangId === "string" ? filters.pesertaMagangId : undefined;
+  const asString = (value: unknown) => (typeof value === "string" && value ? value : undefined);
 
   const result = await dokumenService.listDokumen(
     { skip, rows, orderKey, orderRule, searchFilters },
-    pesertaMagangId,
+    {
+      pesertaMagangId: asString(filters.pesertaMagangId),
+      divisiId: asString(filters.divisiId),
+      instansiId: asString(filters.instansiId),
+      pembimbingLapanganId: asString(filters.pembimbingLapanganId),
+    },
     pembimbingScope(req)
   );
   if (!result.ok) { fail(res, result.message, null, result.status); return; }

@@ -33,10 +33,17 @@ const validateContactFields = (body: PesertaBody): string | null => {
 };
 
 export const listPeserta = async (req: AuthRequest, res: Response) => {
-  const { rows, skip, orderKey, orderRule, searchFilters } = parsePagination(req);
+  const { rows, skip, orderKey, orderRule, searchFilters, filters } = parsePagination(req);
+  const asString = (value: unknown) => (typeof value === "string" && value ? value : undefined);
 
   const result = await pesertaService.listPeserta(
     { skip, rows, orderKey, orderRule, searchFilters },
+    {
+      divisiId: asString(filters.divisiId),
+      instansiId: asString(filters.instansiId),
+      pembimbingLapanganId: asString(filters.pembimbingLapanganId),
+      status: asString(filters.status),
+    },
     pembimbingScope(req)
   );
   if (!result.ok) { fail(res, result.message, null, result.status); return; }
@@ -61,6 +68,10 @@ export const createPeserta = async (req: AuthRequest, res: Response) => {
 
   if (body.status && !Object.values(StatusMagang).includes(body.status as StatusMagang)) {
     fail(res, `Status tidak valid. Pilihan: ${Object.values(StatusMagang).join(", ")}`); return;
+  }
+
+  if (body.tanggalMulai && body.tanggalSelesai && body.tanggalSelesai < body.tanggalMulai) {
+    fail(res, "Tanggal selesai harus setelah atau sama dengan tanggal mulai"); return;
   }
 
   const result = await pesertaService.createPeserta({
@@ -91,6 +102,10 @@ export const updatePeserta = async (req: AuthRequest, res: Response) => {
 
   const contactError = validateContactFields(body);
   if (contactError) { fail(res, contactError); return; }
+
+  if (body.tanggalMulai && body.tanggalSelesai && body.tanggalSelesai < body.tanggalMulai) {
+    fail(res, "Tanggal selesai harus setelah atau sama dengan tanggal mulai"); return;
+  }
 
   const result = await pesertaService.updatePeserta(req.params.id as string, {
     name: body.name,

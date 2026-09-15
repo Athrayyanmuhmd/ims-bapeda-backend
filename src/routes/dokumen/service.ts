@@ -31,7 +31,12 @@ const present = (d: DokumenWithRelations) => ({
 // means unrestricted (Admin). See pembimbingScope() in middleware/auth.
 export const listDokumen = async (
   { skip, rows, orderKey, orderRule, searchFilters }: PaginationParams,
-  pesertaMagangId?: string,
+  filters: {
+    pesertaMagangId?: string;
+    divisiId?: string;
+    instansiId?: string;
+    pembimbingLapanganId?: string;
+  } = {},
   pembimbingId?: string
 ) => {
   const searchWhere = Object.keys(searchFilters).length
@@ -42,10 +47,22 @@ export const listDokumen = async (
       }
     : {};
 
-  const where = {
-    ...searchWhere,
-    ...(pesertaMagangId ? { pesertaMagangId } : {}),
-    ...(pembimbingId ? { pesertaMagang: { pembimbingLapanganId: pembimbingId } } : {}),
+  const pesertaMagangFilter: Prisma.PesertaMagangWhereInput = {
+    ...(pembimbingId
+      ? { pembimbingLapanganId: pembimbingId }
+      : filters.pembimbingLapanganId
+        ? { pembimbingLapanganId: filters.pembimbingLapanganId }
+        : {}),
+    ...(filters.divisiId ? { divisiId: filters.divisiId } : {}),
+    ...(filters.instansiId ? { instansiId: filters.instansiId } : {}),
+  };
+
+  const where: Prisma.DokumenWhereInput = {
+    AND: [
+      searchWhere,
+      filters.pesertaMagangId ? { pesertaMagangId: filters.pesertaMagangId } : {},
+      Object.keys(pesertaMagangFilter).length ? { pesertaMagang: pesertaMagangFilter } : {},
+    ],
   };
 
   const [data, totalData] = await Promise.all([

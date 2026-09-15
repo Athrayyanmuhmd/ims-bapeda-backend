@@ -48,7 +48,7 @@ describe("peserta magang service — pembimbing scoping", () => {
     vi.mocked(pesertaRepository.findMany).mockResolvedValue([]);
     vi.mocked(pesertaRepository.count).mockResolvedValue(0);
 
-    await pesertaService.listPeserta(baseParams, PEMBIMBING);
+    await pesertaService.listPeserta(baseParams, {}, PEMBIMBING);
 
     const [where] = vi.mocked(pesertaRepository.findMany).mock.calls[0];
     expect(where).toMatchObject({ pembimbingLapanganId: PEMBIMBING });

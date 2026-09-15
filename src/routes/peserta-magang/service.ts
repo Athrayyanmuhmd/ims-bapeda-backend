@@ -49,11 +49,26 @@ const assertPembimbingEligible = async (userId: string) => {
 // means unrestricted (Admin). See pembimbingScope() in middleware/auth.
 export const listPeserta = async (
   { skip, rows, orderKey, orderRule, searchFilters }: PaginationParams,
+  filters: {
+    divisiId?: string;
+    instansiId?: string;
+    pembimbingLapanganId?: string;
+    status?: string;
+  } = {},
   pembimbingId?: string
 ) => {
   const where = {
     ...buildSearchWhere(searchFilters, SEARCHABLE),
-    ...(pembimbingId ? { pembimbingLapanganId: pembimbingId } : {}),
+    ...(pembimbingId
+      ? { pembimbingLapanganId: pembimbingId }
+      : filters.pembimbingLapanganId
+        ? { pembimbingLapanganId: filters.pembimbingLapanganId }
+        : {}),
+    ...(filters.divisiId ? { divisiId: filters.divisiId } : {}),
+    ...(filters.instansiId ? { instansiId: filters.instansiId } : {}),
+    ...(filters.status && Object.values(StatusMagang).includes(filters.status as StatusMagang)
+      ? { status: filters.status as StatusMagang }
+      : {}),
   };
 
   const [data, totalData] = await Promise.all([

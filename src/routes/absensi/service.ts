@@ -34,6 +34,10 @@ interface ListAbsensiFilters {
   sampaiTanggal?: string;
   pesertaMagangId?: string;
   izinStatus?: IzinStatus;
+  kehadiran?: Kehadiran;
+  divisiId?: string;
+  instansiId?: string;
+  pembimbingLapanganId?: string;
 }
 
 // An exact `tanggal` wins over a range; otherwise either end of the range is
@@ -58,23 +62,34 @@ export const listAbsensi = async (
   filters: ListAbsensiFilters = {},
   pembimbingId?: string
 ) => {
-  const searchWhere = Object.keys(searchFilters).length
+  const searchWhere: Prisma.AbsensiWhereInput = Object.keys(searchFilters).length
     ? {
         OR: Object.entries(searchFilters).map(([, value]) => ({
-          pesertaMagang: { name: { contains: value, mode: "insensitive" as const } },
+          pesertaMagang: { name: { contains: String(value), mode: "insensitive" as const } },
         })),
       }
     : {};
 
-  const tanggalWhere = buildTanggalWhere(filters);
+  const pesertaMagangFilter: Prisma.PesertaMagangWhereInput = {
+    ...(pembimbingId
+      ? { pembimbingLapanganId: pembimbingId }
+      : filters.pembimbingLapanganId
+        ? { pembimbingLapanganId: filters.pembimbingLapanganId }
+        : {}),
+    ...(filters.divisiId ? { divisiId: filters.divisiId } : {}),
+    ...(filters.instansiId ? { instansiId: filters.instansiId } : {}),
+  };
 
-  const pesertaWhere = filters.pesertaMagangId ? { pesertaMagangId: filters.pesertaMagangId } : {};
-
-  const izinWhere = filters.izinStatus ? { izinStatus: filters.izinStatus } : {};
-
-  const scopeWhere = pembimbingId ? { pesertaMagang: { pembimbingLapanganId: pembimbingId } } : {};
-
-  const where = { ...searchWhere, ...tanggalWhere, ...pesertaWhere, ...izinWhere, ...scopeWhere };
+  const where: Prisma.AbsensiWhereInput = {
+    AND: [
+      searchWhere,
+      buildTanggalWhere(filters),
+      filters.pesertaMagangId ? { pesertaMagangId: filters.pesertaMagangId } : {},
+      filters.izinStatus ? { izinStatus: filters.izinStatus } : {},
+      filters.kehadiran ? { kehadiran: filters.kehadiran } : {},
+      Object.keys(pesertaMagangFilter).length ? { pesertaMagang: pesertaMagangFilter } : {},
+    ],
+  };
 
   // Stamp missing jamKeluar=17:00 before the roster/rekap is read, so open
   // Hadir rows don't look unfinished after office hours.

@@ -31,7 +31,12 @@ const present = (row: LogbookWithRelations) => ({
 // means unrestricted (Admin). See pembimbingScope() in middleware/auth.
 export const listLogbook = async (
   { skip, rows, orderKey, orderRule, searchFilters }: PaginationParams,
-  pesertaMagangId?: string,
+  filters: {
+    pesertaMagangId?: string;
+    divisiId?: string;
+    instansiId?: string;
+    pembimbingLapanganId?: string;
+  } = {},
   pembimbingId?: string
 ) => {
   const searchWhere = Object.keys(searchFilters).length
@@ -42,10 +47,22 @@ export const listLogbook = async (
       }
     : {};
 
-  const where = {
-    ...searchWhere,
-    ...(pesertaMagangId ? { pesertaMagangId } : {}),
-    ...(pembimbingId ? { pesertaMagang: { pembimbingLapanganId: pembimbingId } } : {}),
+  const pesertaMagangFilter: Prisma.PesertaMagangWhereInput = {
+    ...(pembimbingId
+      ? { pembimbingLapanganId: pembimbingId }
+      : filters.pembimbingLapanganId
+        ? { pembimbingLapanganId: filters.pembimbingLapanganId }
+        : {}),
+    ...(filters.divisiId ? { divisiId: filters.divisiId } : {}),
+    ...(filters.instansiId ? { instansiId: filters.instansiId } : {}),
+  };
+
+  const where: Prisma.LogbookWhereInput = {
+    AND: [
+      searchWhere,
+      filters.pesertaMagangId ? { pesertaMagangId: filters.pesertaMagangId } : {},
+      Object.keys(pesertaMagangFilter).length ? { pesertaMagang: pesertaMagangFilter } : {},
+    ],
   };
 
   const [data, totalData] = await Promise.all([
