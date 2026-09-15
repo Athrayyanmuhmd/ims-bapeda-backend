@@ -2,7 +2,7 @@
 
 > **BACA DOKUMEN INI DULU** sebelum mengubah kode apa pun.
 > Dokumen ini ditulis agar model AI sesi berikutnya memahami **seluruh** sistem tanpa menebak-nebak.
-> Terakhir diperbarui: **15 September 2026** (sesi filter list, notifikasi mobile, UI toolbar, validasi peserta).
+> Terakhir diperbarui: **15 September 2026** (edit profil, notifikasi sudah dilihat, dedupe toast error, polish Absensi/sidebar, print A4, Supabase pooler).
 
 ---
 
@@ -15,21 +15,38 @@ Sistem manajemen magang **Bapeda** (SIMAGANG):
 | Backend API | `d:\DATATA\KKP FADLUL\ims-bapeda-backend` | `Athrayyanmuhmd/ims-bapeda-backend` | `:3001` |
 | Backoffice FE | `d:\DATATA\KKP FADLUL\ims-bapeda-backoffice` | `Athrayyanmuhmd/ims-bapeda-backoffice` | `:3000` |
 
+| Lingkungan | URL |
+|------------|-----|
+| FE production | https://simagang-bapeda.vercel.app |
+| API production | https://simagang-bapeda-api.vercel.app |
+| Supabase project | `brgyaorhucichpxtswtb` (`ims-bapeda`) |
+
 - **Staff** (Admin / Pembimbing) → backoffice `/login` → `/dashboard`, dll.
 - **Peserta magang** → login yang sama `/login` (fallback portal) → `/portal`.
-- DB: **PostgreSQL** (sering via Supabase). ORM: **Prisma**.
-- Branch kerja biasanya `main`.
+- DB: **PostgreSQL** via Supabase pooler. ORM: **Prisma** (`DATABASE_URL` + `DIRECT_URL`).
+- Auth: **Express JWT sendiri** — **bukan** Supabase Auth / `@supabase/ssr`.
+- Branch kerja: `main`.
 
-### Status push (penting)
+### Status push (15 Sep 2026 sore)
 
-Pada akhir sesi 15 Sep 2026, perubahan filter/UI/notifikasi **masih lokal, BELUM di-commit / BELUM di-push** di kedua repo. Cek dengan:
+Sebagian besar sudah di-push ke `origin/main`. Referensi commit:
+
+| Repo | Commit (contoh) | Isi |
+|------|-----------------|-----|
+| Backend | `2dbfa1f` | `PUT /users/me`, `PUT /portal/me` (edit profil) |
+| Backend | `6821b94` | Docs Supabase pooler + Prisma `directUrl` |
+| Backend | `928edab` / `6a4aa89` | List filters; login error 503 jelas |
+| Frontend | `281db6d` | Dialog Edit Profil staff + portal |
+| Frontend | `dd66d80` | Absensi layout, sidebar, `@page { size: A4 }` |
+| Frontend | `6bd897b` / sebelumnya | Chip ringkasan absensi, filter, notif mobile, login await session |
+| Frontend | (push berikutnya) | Notif “sudah dilihat” + dedupe toast saat pindah menu |
+
+Cek dirty tree dengan:
 
 ```bash
 cd "d:\DATATA\KKP FADLUL\ims-bapeda-backend"; git status -sb
 cd "d:\DATATA\KKP FADLUL\ims-bapeda-backoffice"; git status -sb
 ```
-
-Jika `## main...origin/main` tanpa ahead/behind tapi ada `M` / `??` → ada perubahan lokal belum commit.
 
 ---
 
@@ -59,7 +76,9 @@ npm run dev          # http://localhost:3001
 npm test             # vitest
 ```
 
-Env inti: `DATABASE_URL`, `JWT_SECRET` (≥32 char), `PORT=3001`, `FRONTEND_URL=http://localhost:3000`, `APP_TIMEZONE=Asia/Jakarta`, `CHECKIN_START=07:00`, `CHECKIN_END=09:00`, `CHECKOUT_AUTO_AT=17:00`.
+Env inti: `DATABASE_URL`, `DIRECT_URL` (opsional lokal; wajib pola production), `JWT_SECRET` (≥32 char), `PORT=3001`, `FRONTEND_URL=http://localhost:3000`, `APP_TIMEZONE=Asia/Jakarta`, `CHECKIN_START=07:00`, `CHECKIN_END=09:00`, `CHECKOUT_AUTO_AT=17:00`.
+
+Detail pooler: `docs/SUPABASE-SETUP.md` (kedua repo).
 
 ### Frontend
 
@@ -71,7 +90,7 @@ pnpm dev             # http://localhost:3000
 pnpm test
 ```
 
-Env inti: `NEXT_PUBLIC_FE_URL=http://localhost:3000`, `NEXT_PUBLIC_BE_URL=http://localhost:3001`.  
+Env inti: `NEXT_PUBLIC_FE_URL`, `NEXT_PUBLIC_BE_URL`.  
 Opsional dokumen: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET=dokumen` (bucket **private**).
 
 ---
@@ -85,12 +104,13 @@ Browser
   └─ Portal cookie: portal-token-session, portal-peserta-session ──► portalApi ──► /portal/*
                                                       │
                                                       ▼
-                                              Prisma → PostgreSQL
+                                              Prisma → PostgreSQL (Supabase)
 ```
 
 - **Tidak ada `middleware.ts` Next.js.** Guard di layout `(protected)` / `portal` + interceptor 401.
 - JWT staff: `typ: "user"` (legacy boleh tanpa typ). JWT portal: `typ: "peserta"`. Secret sama (`JWT_SECRET`).
 - Role **bukan** dari klaim JWT: setiap request staff, middleware reload user dari DB → `req.role` = nama Role.
+- Login FE: **`await setSession()` / portal session sebelum redirect** (hindari race cookie → dashboard kosong).
 
 ### Scoping Pembimbing
 
@@ -130,14 +150,14 @@ ims-bapeda-backend/src/
 | Prefix | Modul |
 |--------|--------|
 | `/login`, `/verify-token` | `routes/auth` |
-| `/users` | users |
+| `/users` | users (+ `PUT /me`, `POST /change-password`) |
 | `/divisi`, `/roles`, `/instansi` | master data |
 | `/peserta-magang` | peserta |
 | `/absensi` | absensi + izin approve/reject |
 | `/logbook` | logbook (DB table masih `Jurnal`) |
 | `/penilaian`, `/dokumen` | penilaian, dokumen |
-| `/notifications` | summary computed (tanpa tabel) |
-| `/portal` | peserta portal |
+| `/notifications` | summary computed (tanpa tabel inbox) |
+| `/portal` | peserta portal (+ `PUT /me`) |
 
 ### Pagination / filter (WAJIB dipahami)
 
@@ -174,6 +194,8 @@ File: `ims-bapeda-backend/prisma/schema.prisma`
 | Penilaian | nilai + komentar + penilai User |
 | Dokumen | JenisDokumen enum; urlFile |
 
+`datasource` memakai `url` + `directUrl` untuk pooler / migrate.
+
 ---
 
 ## 6. Aturan bisnis kritis (jangan diubah sembarangan)
@@ -191,13 +213,36 @@ File: `ims-bapeda-backend/prisma/schema.prisma`
 - Portal: 1 entri/hari; hanya hari **Hadir** (ada jamMasuk); tidak boleh future; tidak boleh di hari Izin/Sakit/Alpa/pending.
 - Staff CRUD lebih longgar tapi unique constraint tetap berlaku.
 
-### Notifikasi staff
+### Notifikasi staff (computed + dismiss FE)
 
-`GET /notifications/summary` (computed):
+`GET /notifications/summary` **bukan inbox pesan** — hitung live:
 
 - `belumAbsen` — peserta AKTIF tanpa absensi hari ini
 - `pendingIzin` — izin PENDING
 - `endingSoon` — `tanggalSelesai` dalam ~30 hari (termasuk yang sudah lewat)
+
+**Anti-tumpuk badge (FE, localStorage per userId):**
+
+- Hook: `hooks/use-notif-seen.ts` — key `simagang:notif-seen:{userId}`.
+- Klik item → tandai dilihat → hilang dari daftar & badge.
+- Tombol **Tandai semua dilihat**.
+- Aturan key:
+  - `pendingIzin` → `absensiId` (sampai entri hilang dari API / dibuka lagi hanya jika id baru)
+  - `belumAbsen` → `{pesertaId}:{today}` (otomatis kadaluarsa keesokan hari)
+  - `endingSoon` → `{pesertaId}:{tanggalSelesai}` (muncul lagi jika periode berubah)
+
+Tidak ada tabel dismiss di DB — hanya browser lokal.
+
+### Edit profil (self-service terbatas)
+
+| Actor | Endpoint | Boleh ubah | Tidak boleh |
+|-------|----------|------------|-------------|
+| Staff (Admin/Pembimbing) | `PUT /users/me` | `fullName`, `phoneNumber`, password opsional (+ `currentPassword`) | email, role, divisi |
+| Peserta portal | `PUT /portal/me` | `name`, `phoneNumber`, password opsional | email, divisi, status, NIM, periode |
+
+- Password lama wajib hanya jika mengisi password baru.
+- FE: dialog **Edit Profil** (header avatar staff; ikon edit portal). Session cookie user/peserta di-refresh tanpa re-login (`updateSessionUser` / `updatePortalPeserta`).
+- Endpoint lama `POST .../change-password` masih ada (kompatibel).
 
 ---
 
@@ -206,65 +251,65 @@ File: `ims-bapeda-backend/prisma/schema.prisma`
 ```
 ims-bapeda-backoffice/src/
   app/
-    (auth)/login/              # login unified
+    (auth)/login/              # login unified (+ await setSession)
     (protected)/               # shell sidebar + header
-      _components/app-header.tsx
+      _components/app-sidebar.tsx   # gradient, grup Operasional/Administrasi, footer user
+      _components/app-header.tsx    # Edit Profil + notif bell
       _components/notification-bell.tsx
-      dashboard/, peserta-magang/, absensi/, logbook/,
-      penilaian/, dokumen/, manajemen-*
-    portal/                    # UI peserta
+      _components/partials/dialog-edit-profile.tsx
+      absensi/                 # tab Hari Ini | Riwayat; chip ringkasan; export CSV
+      peserta-magang/[id]/cetak  # laporan A4
+      dashboard/, logbook/, penilaian/, dokumen/, manajemen-*
+    portal/                    # UI peserta + edit-profile-dialog
   components/
-    page-header.tsx            # judul + actions (Tombol Tambah di sini)
-    list-toolbar.tsx           # search + filters grid + action opsional
-    list-filters.tsx           # dropdown Divisi/Instansi/Kehadiran/Status/Pembimbing
-    list-page-card.tsx
-    status-badge.tsx
-    data-table.tsx
-    single-select.tsx
-    ui/                        # shadcn
-  hooks/use-query-builder.tsx  # sync URL ↔ API params
-  hooks/use-mobile.ts          # breakpoint 768
-  services/                    # axios wrappers + zod types
-  stores/auth.tsx
-  utils/api.ts                 # getParams JSON-stringify filters
-  constants/query-keys.ts, navigation.ts, session.ts
+    page-header.tsx
+    list-toolbar.tsx           # search+filters grid; slot `extras` (export dates)
+    list-filters.tsx
+    …
+  hooks/use-query-builder.tsx
+  hooks/use-notif-seen.ts      # dismiss notifikasi (localStorage)
+  hooks/use-mobile.ts
+  styles/globals.css           # sidebar tokens; @media print @page size A4
+  utils/session.ts, portal-session.ts
 ```
 
-### Pola halaman list (standar sesudah polish UI)
+### Pola halaman list
 
-1. `page.tsx` tipis → `_components/table/index.tsx` (atau container).
-2. `PageHeader` dengan `actions={<Button>Tambah …</Button>}` — **bukan** di dalam toolbar.
-3. `ListToolbar` + `ListFilters` + `DataTable`.
-4. `useQueryBuilder({ defaultSearchKeys: ["name"] })` → `params` ke React Query + service.
-5. `ListFilters values={filters} onChange={setFilter} showKehadiran? showStatus?`.
+1. `PageHeader` dengan tombol **Tambah** di `actions` (bukan di toolbar).
+2. `ListToolbar` + `ListFilters` (`display: contents`) + opsional `extras` (mis. Export CSV).
+3. `useQueryBuilder` → `setFilter` / `filters` di URL.
 
-### Layout toolbar (desktop)
+### Absensi UI (terbaru)
 
-Search dan filter berada di **satu CSS grid** (`ListToolbar`).  
-`ListFilters` memakai `display: contents` agar setiap `SingleSelect` jadi cell grid yang sejajar dengan search (menghindari ruang kosong di kanan search).
+- Tab **Hari Ini / Riwayat** di PageHeader (full width mobile).
+- Hari Ini: satu bar tanggal + chip ringkasan **Hadir | Sakit/Izin | Alpa | Belum** (chip “Menunggu” dihapus; pending masuk hitungan Sakit/Izin).
+- Riwayat: search/filter grid; baris kedua date range + Export CSV (tanpa kotak dashed); Tambah Absensi di PageHeader.
 
-### useQueryBuilder — API penting
+### Laporan cetak
 
-- URL keys: `page`, `rows`, `searchFilters` (JSON), `filters` (JSON), `orderKey`, `orderRule`.
-- `setFilter(key, value | null)` — null menghapus key; reset page ke 1.
-- `setSearch(value)` mengisi semua `defaultSearchKeys`.
+- Preview `max-w-[210mm]`.
+- Print CSS: `@page { size: A4; margin: 18mm 16mm; }` + hide chrome via `[data-print-area]`.
 
 ### Login unified
 
-File: `src/app/(auth)/login/_components/login-form.tsx`
-
-1. Coba staff login.
-2. Hanya jika **401**, coba portal login.
-3. Staff → `/dashboard`; peserta → `/portal`.
-4. **Jangan** kembalikan tab Staff/Peserta (sudah dihapus atas permintaan user).
+1. Coba staff login → hanya **401** lalu portal.
+2. Staff → `/dashboard`; peserta → `/portal`.
+3. **Jangan** kembalikan tab Staff/Peserta.
 
 ### Notifikasi UI
 
-`notification-bell.tsx`:
+- Desktop: DropdownMenu; mobile: Sheet bottom.
+- Badge = jumlah item **belum dilihat** (setelah filter `useNotifSeen`), bukan raw count API saja.
 
-- Desktop: DropdownMenu.
-- Mobile (`useIsMobile`): Sheet bottom rounded.
-- Warna urgency: lewat deadline merah; hampir habis oranye; belum absen amber.
+### Toast error (jangan spam saat navigasi)
+
+- Global `QueryCache.onError` di `components/providers.tsx` men-toast gagal GET.
+- Saat pindah menu, banyak query paralel (tabel + opsi filter + notif) → dulu bisa **bertumpuk**.
+- Mitigasi:
+  1. Semua toast query pakai `id: "simagang-query-error"` (Sonner mengganti, bukan menumpuk).
+  2. Query opsi/filter/notif/detail profil: `meta: { silent: true }`.
+  3. Abort/cancel saat ganti route tidak di-toast.
+- Kalau masih muncul **satu** toast, biasanya API/DB benar-benar error (`GET /health` → `db`).
 
 ---
 
@@ -272,55 +317,49 @@ File: `src/app/(auth)/login/_components/login-form.tsx`
 
 - **Jangan** stripe aksen kiri pada card.
 - **Jangan** tema ungu / gradient “AI slop”.
-- Palet teal/navy: primary sekitar `#175e86`, border `#E2E8EA`, bg area konten `#F4F7F8`.
+- Palet teal/navy; sidebar gradient gelap `#0f445c` → `#0a3246`.
 - Font: Inter body, Poppins display (`font-display`).
-- Badge status: lebar/min-height seragam (`StatusBadge`).
-- Tombol **Tambah** di `PageHeader.actions`, bukan di antara search & filter.
-- Mobile: notifikasi harus nyaman (bottom sheet), filter wrap/grid responsif.
+- Badge status seragam (`StatusBadge`).
+- Tombol **Tambah** di `PageHeader.actions`.
+- Mobile: notifikasi bottom sheet; filter responsif; hindari `justify-between` yang meninggalkan lubang kosong di tengah desktop.
 - Portal: enterprise, responsif; check-in window UX jelas saat disabled.
 
 ---
 
-## 9. Yang dikerjakan di sesi 15 Sep 2026 (belum tentu sudah push)
+## 9. Changelog sesi 15 Sep 2026 (ringkas)
 
-### Backend (local dirty)
+### Sudah di-push (inti)
 
-- Absensi list: filter `kehadiran`, `divisiId`, `instansiId`, `pembimbingLapanganId` + where pakai `AND`.
-- Peserta list: filter `divisiId`, `instansiId`, `pembimbingLapanganId`, `status`.
-- Logbook / penilaian / dokumen list: filter relasi peserta yang sama.
-- Validasi tanggal selesai ≥ tanggal mulai (controller peserta).
-- Tes absensi/peserta disesuaikan bentuk `AND`.
+**Backend**
 
-### Frontend (local dirty)
+- List filters absensi/peserta/logbook/penilaian/dokumen.
+- Validasi tanggal selesai ≥ mulai (peserta).
+- Login: error DB/JWT → 503 jelas.
+- Docs Supabase + `directUrl`.
+- **Edit profil:** `PUT /users/me`, `PUT /portal/me` (+ tes service).
 
-- `useQueryBuilder`: baca/tulis `filters`, method `setFilter`.
-- Komponen baru: `list-filters.tsx`, `notification-bell.tsx`.
-- `list-toolbar.tsx`: grid search+filters; action opsional di kanan.
-- Wire filter di: Absensi (riwayat + hari ini), Peserta, Logbook, Penilaian, Dokumen.
-- Tombol Tambah dipindah ke PageHeader (semua halaman list utama + manajemen).
-- Validasi Zod peserta: enum status + refine rentang tanggal.
-- Notifikasi mobile bottom sheet + UI item lebih kaya.
+**Frontend**
 
-File FE yang biasanya dirty setelah sesi ini (cek `git status`):
-
-- `src/components/list-toolbar.tsx`, `list-filters.tsx` (baru)
-- `src/hooks/use-query-builder.tsx` (+ test)
-- `src/app/(protected)/_components/app-header.tsx`, `notification-bell.tsx` (baru)
-- table index absensi/peserta/logbook/penilaian/dokumen/manajemen-*
-- `absensi/_components/today/*`, `peserta-magang` form + types
+- Filter list + toolbar; Tambah ke PageHeader; notifikasi mobile.
+- Login: await session; skip `getSession` pada request login.
+- Absensi: chip ringkasan, layout desktop, export inline, sidebar polish, print A4.
+- **Edit Profil** dialog staff + portal.
+- **Notifikasi sudah dilihat** (`use-notif-seen`) + **dedupe/silent toast** saat pindah menu.
 
 ---
 
 ## 10. Checklist sebelum mengubah fitur
 
-1. Apakah ini staff atau portal? Cookie & API client mana?
-2. Apakah perlu `pembimbingScope`? Admin vs Pembimbing?
-3. Filter list: pakai `filters` JSON, bukan hardcode query baru.
+1. Staff atau portal? Cookie & API client mana?
+2. Perlu `pembimbingScope`?
+3. Filter list: pakai `filters` JSON.
 4. Unique absensi/logbook per hari — tangani race/409.
 5. Jangan pecah jendela check-in WIB / auto-checkout tanpa sadar.
-6. UI list: PageHeader actions + ListToolbar grid + ListFilters contents.
-7. Setelah edit FE: `pnpm`/tsc; BE: `npm test` untuk service terkait.
-8. **Jangan commit/push** kecuali user meminta eksplisit.
+6. UI list: PageHeader actions + ListToolbar (+ `extras` bila perlu).
+7. Notifikasi: ingat dismiss FE vs data live API.
+8. Edit profil: jangan izinkan self-edit email/role/divisi tanpa keputusan produk.
+9. Setelah edit: FE `pnpm`/tsc; BE `npm test`.
+10. **Jangan commit/push** kecuali user meminta eksplisit.
 
 ---
 
@@ -330,35 +369,40 @@ File FE yang biasanya dirty setelah sesi ini (cek `git status`):
 |-----------|--------|------|
 | Login staff | POST | `/login` |
 | Login portal | POST | `/portal/login` |
-| List peserta | GET/POST | `/peserta-magang` + filters |
-| List absensi | GET/POST | `/absensi` + filters |
-| Pending izin | GET | `/absensi/izin/pending` |
+| Edit profil staff | PUT | `/users/me` |
+| Ganti password staff | POST | `/users/change-password` |
+| Profil portal | GET | `/portal/me` |
+| Edit profil portal | PUT | `/portal/me` |
+| Ganti password portal | POST | `/portal/change-password` |
+| List peserta / absensi | GET/POST | `/peserta-magang`, `/absensi` + filters |
 | Approve/reject izin | POST | `/absensi/:id/approve-izin` / `reject-izin` |
 | Notif summary | GET | `/notifications/summary` |
-| Portal check-in | POST | `/portal/absensi/check-in` |
-| Portal izin | POST | `/portal/absensi/izin` |
-| Health | GET | `/health` |
+| Portal check-in / izin | POST | `/portal/absensi/check-in`, `/portal/absensi/izin` |
+| Health | GET | `/health` (`db`, `frontendUrl`, …) |
 
 ---
 
 ## 12. Dokumen lain di repo
 
-- `ims-bapeda-backend/README.md` — setup + hak akses.
-- `ims-bapeda-backend/docs/UAT.md` — checklist UAT soft-launch.
-- `ims-bapeda-backoffice/README.md` — setup FE + Supabase dokumen.
-
-Dokumen **ini** (`docs/PROJECT-CONTEXT.md` di root workspace `KKP FADLUL`) adalah handoff lintas-repo untuk AI/developer sesi berikutnya.
+- `ims-bapeda-backend/README.md` — setup + hak akses + soft-launch ops.
+- `ims-bapeda-backend/docs/UAT.md` — checklist UAT.
+- `ims-bapeda-backend/docs/SUPABASE-SETUP.md` — pooler DB (bukan Auth).
+- `ims-bapeda-backoffice/README.md` — setup FE + Storage dokumen.
+- `ims-bapeda-backoffice/docs/SUPABASE-SETUP.md` — mirror FE.
+- Salinan handoff: `docs/PROJECT-CONTEXT.md` di root workspace **dan** di tiap repo `docs/`.
 
 ---
 
 ## 13. Instruksi singkat untuk model sesi berikutnya
 
-Kamu sedang mengerjakan **SIMAGANG Bapeda**: monorepo longgar berisi Express+Prisma backend dan Next.js backoffice+portal.
+Kamu sedang mengerjakan **SIMAGANG Bapeda**: Express+Prisma API + Next.js backoffice/portal.
 
 - Baca bagian 0–8 sebelum coding.
-- Prefer ubah pola yang sudah ada (`PageHeader`, `ListToolbar`, `useQueryBuilder`, `pembimbingScope`) daripada invent arsitektur baru.
-- Hormati preferensi desain user (bagian 8).
-- Jika user bilang “push”, commit terpisah per repo (`ims-bapeda-backend` dan `ims-bapeda-backoffice`) dengan pesan fokus *why*, lalu `git push -u origin HEAD`.
-- Kredensial uji ada di bagian 1; jangan hardcode secret production.
+- Prefer pola yang ada (`PageHeader`, `ListToolbar`, `useQueryBuilder`, `pembimbingScope`, Edit Profil, notif seen).
+- Hormati preferensi desain (bagian 8).
+- Supabase = **DB + Storage saja**, bukan Auth.
+- Jika user bilang “push”, commit **terpisah per repo**, pesan fokus *why*, lalu `git push`.
+- Kredensial uji di bagian 1; jangan hardcode secret production.
+- Cek `git status` FE untuk sisa kerja notifikasi dismiss yang belum push.
 
 **Workspace root:** `d:\DATATA\KKP FADLUL`
